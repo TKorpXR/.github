@@ -31,6 +31,4 @@ jobs:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           pr: "${{ github.event.pull_request }}"
           pr_number: "${{ github.event.pull_request.number }}"
-        env:
-          ACTIONS_STEP_DEBUG: true
 
