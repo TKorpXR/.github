@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: PR labeler
-        uses: SteveG-tkorp/test-actions@v0.0.1-alpha
+        uses: SteveG-tkorp/test-actions@latest
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           pr_number: ${{ github.event.pull_request.number }}
