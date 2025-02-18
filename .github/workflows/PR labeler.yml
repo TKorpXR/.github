@@ -19,3 +19,4 @@ jobs:
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           pr_number: ${{ github.event.pull_request.number }}
+          issue_type: ${{github.event.issue.type}}
