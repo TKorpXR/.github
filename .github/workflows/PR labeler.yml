@@ -29,4 +29,5 @@ jobs:
         uses: SteveG-tkorp/test-actions@v0.0.1-alpha
         with:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          pr_number: "${{ github.event.pull_request.number }}"
 
