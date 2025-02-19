@@ -2,8 +2,7 @@ name: PR Labeler
 on:
   pull_request:
     types:
-      - opened
-      - reopened
+      - closed
 jobs:
   build:
     runs-on: ubuntu-latest
