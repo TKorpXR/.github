@@ -20,4 +20,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           pr_number: ${{ github.event.pull_request.number }}
           issue_number: ${{github.event.issue.number}}
-          labels_config_path: "./workflows/labeler-config.json"
+          labels_config_path: "./github/workflows/labeler-config.json"
