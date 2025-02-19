@@ -4,11 +4,6 @@ on:
     types:
       - opened
       - reopened
-  issues:
-    types:
-      - labeled
-      - unlabeled
-  workflow_dispatch: null
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,5 +14,4 @@ jobs:
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           pr_number: ${{ github.event.pull_request.number }}
-          issue_number: ${{github.event.issue.number}}
           labels_config_path: "./.github/workflows/labeler-config.json"
