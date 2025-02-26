@@ -1,0 +1,35 @@
+---
+name: Feature
+description: Demander une nouvelle fonctionnalité et/ou une amélioration
+projects: ["pulse-web-interface"]
+type: Feature
+body:
+  - type: checkboxes
+    id: type-feature
+    attributes:
+      label: "Préciser le type de la demande"
+      options:
+        - label: Amélioration
+        - label: Nouvelle fonctionnalité
+  - type: input
+    id: url
+    attributes:
+      label: "Url de la page"
+      description: "Aides-nous à localiser le problème. Pour les devs : il est possible d'indiquer le chemin relatif vers le composant"
+      placeholder: "https://pulse-xr.com/page-avec-bug"
+    validations:
+      required: false
+  - type: input
+    id: feature
+    attributes:
+      label: "Description courte de la demande"
+      description: "Un résumé de la fonctionnalité ou de l'amélioration demandée"
+    validations:
+      required: true
+  - type: textarea
+    id: feature-detailed
+    attributes:
+      label: "Description complète de la demande"
+      description: "Un résumé de la fonctionnalité ou de l'amélioration demandée. N'hésite pas à ajouter une ou plusieurs captures d'écran"
+    validations:
+      required: true
