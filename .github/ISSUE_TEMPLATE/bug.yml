@@ -27,7 +27,7 @@ body:
   - type: dropdown
     id: sender
     attributes:
-      label: Ticket créé par :
+      label: "Ticket créé par :"
     options:
       label: Lyna
       label: Claudyann
