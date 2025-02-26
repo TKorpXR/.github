@@ -28,11 +28,11 @@ body:
     id: sender
     attributes:
       label: "Ticket créé par :"
-    options:
-      label: Lyna
-      label: Claudyann
-      label: Kais
-      label: Rodolphe
-      label: Autre (préciser dans la description du problème, et l'option sera ajouté !)
+      options:
+        label: Lyna
+        label: Claudyann
+        label: Kais
+        label: Rodolphe
+        label: Autre (préciser dans la description du problème, et l'option sera ajouté !)
     validations:
       required: true
