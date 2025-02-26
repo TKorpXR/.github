@@ -1,5 +1,5 @@
 ---
-name: Feature
+name: 🚀 Feature
 description: Demander une nouvelle fonctionnalité et/ou une amélioration
 projects: ["pulse-web-interface"]
 type: Feature
@@ -33,3 +33,16 @@ body:
       description: "Un résumé de la fonctionnalité ou de l'amélioration demandée. N'hésite pas à ajouter une ou plusieurs captures d'écran"
     validations:
       required: true
+    - type: dropdown
+    id: sender
+    attributes:
+      label: "Ticket créé par :"
+      options:
+        - Lyna
+        - Claudyann
+        - Kais
+        - Rodolphe
+        - Autre (préciser dans la description du problème, et l'option sera ajouté !)
+    validations:
+      required: true
+
