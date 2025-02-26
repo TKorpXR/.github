@@ -15,7 +15,7 @@ body:
     id: url
     attributes:
       label: "Url de la page"
-      description: "Aides-nous à localiser le problème.
+      description: "Aides-nous à localiser le problème."
       placeholder: "https://pulse-xr.com/page-avec-bug"
     validations:
       required: false
