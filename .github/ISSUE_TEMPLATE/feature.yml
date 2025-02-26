@@ -19,13 +19,6 @@ body:
       placeholder: "https://pulse-xr.com/page-avec-bug"
     validations:
       required: false
-  - type: input
-    id: feature
-    attributes:
-      label: "Description courte de la demande"
-      description: "Un résumé de la fonctionnalité ou de l'amélioration demandée"
-    validations:
-      required: true
   - type: textarea
     id: feature-detailed
     attributes:
