@@ -1,5 +1,6 @@
 ---
-name: Bug
+name: 💣 Bug
+title: Quel est le problème ?
 description: Signaler un bug
 projects:
   - pulse-web-interface
@@ -20,6 +21,18 @@ body:
   - type: textarea
     id: bug-description
     attributes:
-      label: Quel est le problème ?
+      label: Décris-nous le problème le plus précisement possible.
+    validations:
+      required: true
+  - type: dropdown
+    id: sender
+    attributes:
+      label: Ticket créé par :
+    options:
+      label: Lyna
+      label: Claudyann
+      label: Kais
+      label: Rodolphe
+      label: Autre (préciser dans la description du problème, et l'option sera ajouté !)
     validations:
       required: true
