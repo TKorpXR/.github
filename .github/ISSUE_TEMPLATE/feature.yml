@@ -35,7 +35,7 @@ body:
         - Claudyann
         - Kais
         - Rodolphe
-        - Autre (préciser dans la description du problème, et l'option sera ajouté !)
+        - Autre (préciser dans la description du problème, et l'option sera ajoutée !)
     validations:
       required: true
 
