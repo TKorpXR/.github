@@ -33,7 +33,7 @@ body:
       description: "Un résumé de la fonctionnalité ou de l'amélioration demandée. N'hésite pas à ajouter une ou plusieurs captures d'écran"
     validations:
       required: true
-    - type: dropdown
+  - type: dropdown
     id: sender
     attributes:
       label: "Ticket créé par :"
