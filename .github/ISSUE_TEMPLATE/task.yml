@@ -1,5 +1,5 @@
 ---
-name: Task
+name: 📌 Task
 description: Prévoir une tâche hors bug ou nouvelle fonctionnalité (tests, configuration, traduction, etc)
 projects: ["pulse-web-interface"]
 type: Task
@@ -22,17 +22,22 @@ body:
       placeholder: "https://pulse-xr.com/page-avec-bug"
     validations:
       required: false
-  - type: input
-    id: feature
-    attributes:
-      label: "Description courte de la tâche"
-      description: "Un résumé de la tâche demandée"
-    validations:
-      required: true
   - type: textarea
     id: feature-detailed
     attributes:
       label: "Description complète de la tâche"
       description: "Un résumé de la tâche demandée. N'hésite pas à ajouter une ou plusieurs captures d'écran"
+    validations:
+      required: true
+  - type: dropdown
+    id: sender
+    attributes:
+      label: "Ticket créé par :"
+      options:
+        - Lyna
+        - Claudyann
+        - Kais
+        - Rodolphe
+        - Autre (préciser dans la description du problème, et l'option sera ajouté !)
     validations:
       required: true
