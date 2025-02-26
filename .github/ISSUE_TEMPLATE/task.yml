@@ -18,7 +18,7 @@ body:
     id: url
     attributes:
       label: "Cible"
-      description: "Aides-nous à localiser le problème. Pour les devs : il est possible d'indiquer le chemin relatif vers le composant"
+      description: "Aides-nous à localiser le problème."
       placeholder: "https://pulse-xr.com/page-avec-bug"
     validations:
       required: false
