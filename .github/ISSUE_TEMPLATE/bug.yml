@@ -1,6 +1,5 @@
 ---
 name: 💣 Bug
-title: Quel est le problème ?
 description: Signaler un bug
 projects:
   - pulse-web-interface
