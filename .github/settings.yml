@@ -1,0 +1,31 @@
+# Labels: define labels for Issues and Pull Requests
+labels:
+  - name: 🧮 backend
+    color: #E59F53
+    
+  - name: 🎈 frontend
+    color: #CAF5CD
+    
+  - name: 📘 documentation
+    color: #0075ca
+    
+  - name: 📈 enhancement
+    color: #a2eeef
+    
+  - name: 🌱 good first issue
+    color: #7057ff
+    
+  - name: 🛟 help wanted
+    color: #008672
+    
+  - name: ❌ invalid
+    color: #e4e669
+    
+  - name: 🖋️ orthographe/syntaxe
+    color: #A14E01
+    
+  - name: ❓ question
+    color: #d876e3
+    
+  - name: ✨ style
+    color: #4BE836
