@@ -4,6 +4,17 @@ description: Prévoir une tâche hors bug ou nouvelle fonctionnalité (tests, co
 projects: ["pulse-web-interface"]
 type: Task
 body:
+  - type: dropdown
+    id: project
+    attributes:
+      label: "Périmètre"
+      options:
+        - Web
+        - Appli mobile
+        - Mdm
+        - Autre (préciser dans la description du problème, et l'option sera ajoutée !)
+    validations:
+      required: true
   - type: checkboxes
     id: type-feature
     attributes:
@@ -13,6 +24,7 @@ body:
         - label: Traduction
         - label: Sécurité
         - label: Configuration
+        - label: Factorisation
         - label: Autre
   - type: input
     id: url
@@ -27,17 +39,5 @@ body:
     attributes:
       label: "Description complète de la tâche"
       description: "Un résumé de la tâche demandée. N'hésite pas à ajouter une ou plusieurs captures d'écran"
-    validations:
-      required: true
-  - type: dropdown
-    id: sender
-    attributes:
-      label: "Ticket créé par :"
-      options:
-        - Lyna
-        - Claudyann
-        - Kais
-        - Rodolphe
-        - Autre (préciser dans la description du problème, et l'option sera ajoutée !)
     validations:
       required: true
