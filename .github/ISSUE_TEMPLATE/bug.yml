@@ -9,10 +9,20 @@ body:
     attributes:
       label: "Périmètre"
       options:
-        - Web
-        - Appli mobile
-        - Mdm
+        - 💻 Interface web
+        - 📱 Appli mobile
+        - 🧩 Mdm
+        - 🥽 Appli VR
         - Autre (préciser dans la description du problème, et l'option sera ajoutée !)
+    validations:
+      required: true
+  - type: dropdown
+    id: bloquant
+    attributes:
+      label: "Bloquant pour la v1 ?"
+      options:
+        - ✨ Non
+        - ⚠️ Oui
     validations:
       required: true
   - type: input
