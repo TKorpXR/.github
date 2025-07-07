@@ -1,7 +1,6 @@
 ---
 name: 📌 Task
 description: Prévoir une tâche hors bug ou nouvelle fonctionnalité (tests, configuration, traduction, etc)
-projects: ["pulse-web-interface"]
 type: Task
 body:
   - type: dropdown
