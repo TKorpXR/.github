@@ -1,9 +1,19 @@
 ---
 name: 🚀 Feature
 description: Demander une nouvelle fonctionnalité et/ou une amélioration
-projects: ["pulse-web-interface"]
 type: Feature
 body:
+  - type: dropdown
+    id: project
+    attributes:
+      label: "Périmètre"
+      options:
+        - Web
+        - Appli mobile
+        - Mdm
+        - Autre (préciser dans la description du problème, et l'option sera ajoutée !)
+    validations:
+      required: true
   - type: checkboxes
     id: type-feature
     attributes:
@@ -24,18 +34,6 @@ body:
     attributes:
       label: "Description complète de la demande"
       description: "Un résumé de la fonctionnalité ou de l'amélioration demandée. N'hésite pas à ajouter une ou plusieurs captures d'écran"
-    validations:
-      required: true
-  - type: dropdown
-    id: sender
-    attributes:
-      label: "Ticket créé par :"
-      options:
-        - Lyna
-        - Claudyann
-        - Kais
-        - Rodolphe
-        - Autre (préciser dans la description du problème, et l'option sera ajoutée !)
     validations:
       required: true
 
