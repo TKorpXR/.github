@@ -1,13 +1,20 @@
 ---
 name: 💣 Bug
 description: Signaler un bug
-projects:
-  - pulse-web-interface
+
 type: Bug
 body:
-  - type: markdown
+ - type: dropdown
+    id: project
     attributes:
-      value: Merci de remplir ces champs !
+      label: "Périmètre"
+      options:
+        - Web
+        - Appli mobile
+        - Mdm
+        - Autre (préciser dans la description du problème, et l'option sera ajoutée !)
+    validations:
+      required: true
   - type: input
     id: url
     attributes:
@@ -15,22 +22,10 @@ body:
       description: "Aides-nous à localiser le problème."
       placeholder: https:pulse-xr.com/page-avec-bug
     validations:
-      required: false
+      required: true
   - type: textarea
     id: bug-description
     attributes:
       label: Décris-nous le problème le plus précisement possible.
-    validations:
-      required: true
-  - type: dropdown
-    id: sender
-    attributes:
-      label: "Ticket créé par :"
-      options:
-        - Lyna
-        - Claudyann
-        - Kais
-        - Rodolphe
-        - Autre (préciser dans la description du problème, et l'option sera ajoutée !)
     validations:
       required: true
