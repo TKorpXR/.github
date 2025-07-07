@@ -4,7 +4,7 @@ description: Signaler un bug
 
 type: Bug
 body:
- - type: dropdown
+  - type: dropdown
     id: project
     attributes:
       label: "Périmètre"
