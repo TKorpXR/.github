@@ -1,0 +1,99 @@
+- name: backend
+  color: E28B67
+  description: "Travaux côté serveur (API, base de données, services)."
+
+- name: bug
+  color: 3A0307
+  description: "Anomalie : le comportement attendu n’est pas respecté."
+
+- name: config
+  color: 73A99E
+  description: "Configuration du projet."
+
+- name: dependencies
+  color: 0366d6
+  description: "PR qui met à jour des fichiers de dépendances (ex. package.json, build.gradle)."
+
+- name: documentation
+  color: 0075ca
+  description: "Améliorations ou ajouts à la documentation."
+
+- name: feature
+  color: 27A9FD
+  description: "Nouvelle fonctionnalité ou amélioration majeure."
+
+- name: frontend
+  color: 22F964
+  description: "Travaux côté interface utilisateur/front-end (web/app)."
+
+- name: good first issue
+  color: 7057ff
+  description: "Idéal pour les nouveaux contributeurs (faible complexité)."
+
+- name: help wanted
+  color: 008672
+  description: "Besoin d’aide ou de renfort pour avancer."
+
+- name: i18n
+  color: 0052cc
+  description: "Internationalisation et traductions de chaînes."
+
+- name: improvments
+  color: 794B35
+  description: "Petites améliorations et optimisations (hors nouvelles fonctionnalités)."
+
+- name: invalid
+  color: e4e669
+  description: "Ticket invalide ou non reproductible."
+
+- name: javascript
+  color: 168700
+  description: "Modifications du code JavaScript."
+
+- name: question
+  color: d876e3
+  description: "Demande d’informations ou clarification."
+
+- name: refacto
+  color: 4598B6
+  description: "Refactoring du code sans changement fonctionnel."
+
+- name: tests
+  color: 08CB5A
+  description: "Ajout/mise à jour de tests unitaires, d’intégration ou end-to-end."
+
+- name: vulnerability
+  color: fbca04
+  description: "Signalement ou correction d’une vulnérabilité de sécurité."
+
+- name: ✨ style
+  color: B655D9
+  description: "Changements de style/formatage (linting, conventions) sans impact fonctionnel."
+
+- name: ❓ A compléter
+  color: b71c7a
+  description: "Ticket incomplet : informations manquantes à renseigner."
+
+- name: 📌 UI/UX
+  color: fef2c0
+  description: "Design d’interface et expérience utilisateur (maquettes, ergonomie)."
+
+- name: 📲 OpenMDM Service
+  color: 9C2611
+  description: "Tâches liées au service OpenMDM côté appareil (Android/Kotlin, service en arrière-plan)."
+
+- name: 😱 orthographe/syntaxe
+  color: b60205
+  description: "Corrections orthographiques, grammaticales ou de syntaxe."
+
+- name: Pulse Control
+  color: 24c1f7
+  description: "Application de pilotage Pulse (découverte réseau, contrôle à distance, outils opérateur)."
+
+- name: Pulse VR Home
+  color: 8b8ebf
+  description: "Launcher/Accueil VR Pulse pour casques (navigation, mise à jour, intégration)."
+
+- name: OpenMDM API
+  color: dc34ab
+  description: "API OpenMDM (Express/NestJS) : endpoints, schémas, authentification."
