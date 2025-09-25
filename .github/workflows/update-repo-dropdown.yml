@@ -112,3 +112,18 @@ jobs:
             console.log('No changes needed.');
           }
           EOF
+      - name: Commit & push changes (if any)
+        run: |
+          # Vérifie s'il y a des modifs sur le workflow ciblé
+          if ! git diff --quiet -- .github/workflows/sync-one-repo.yml; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/workflows/sync-one-repo.yml
+            git commit -m "chore: refresh repo dropdown options"
+            git push
+          else
+            echo "No changes to commit."
+          fi
+      - name: Show first lines of sync-one-repo.yml (debug)
+        run: |
+          sed -n '1,120p' .github/workflows/sync-one-repo.yml
