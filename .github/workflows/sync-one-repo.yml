@@ -4,9 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: "Nom du dépôt cible (ex: pulse-api)"
+        description: "Dépôt cible"
         required: true
-        type: string
+        type: choice
+        options:
+          # BEGIN_REPO_OPTIONS (auto-updated)
+          - example-repo
+          # END_REPO_OPTIONS
       delete-extraneous:
         description: "Supprimer les labels non listés dans labels.yml ?"
         required: false
@@ -37,7 +41,7 @@ jobs:
 
       - name: Run per-repo sync
         env:
-          GH_TOKEN: ${{ secrets.ORG_LABELS_TOKEN }} # PAT org avec repo + read:org (ou fine-grained équivalent)
+          GH_TOKEN: ${{ secrets.ORG_LABELS_TOKEN }} # PAT org: Issues RW + Metadata Read
           ORG: ${{ github.repository_owner }}
           REPO: ${{ github.event.inputs.repo }}
           DELETE_EXTRA: ${{ github.event.inputs.delete-extraneous }}
@@ -75,7 +79,7 @@ jobs:
 
           console.log(`Target: ${org}/${repo}`);
 
-          // Récupérer les labels existants (pagination)
+          // Existing labels (paginate)
           let existing = [];
           let p = 1;
           while (true) {
@@ -86,7 +90,7 @@ jobs:
           }
           const existingMap = new Map(existing.map(l => [l.name, l]));
 
-          // Créer / mettre à jour
+          // Create / update
           for (const L of labels) {
             const ex = existingMap.get(L.name);
             if (!ex) {
@@ -114,7 +118,7 @@ jobs:
             }
           }
 
-          // Supprimer les labels en trop (optionnel)
+          // Delete extras
           if (deleteExtra) {
             for (const exName of existingMap.keys()) {
               if (!canonical.has(exName)) {

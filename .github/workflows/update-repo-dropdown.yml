@@ -1,0 +1,125 @@
+name: Update Repo Dropdown
+
+on:
+  workflow_dispatch:
+    inputs:
+      include-archived:
+        description: "Inclure les repos archivés ?"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      include-forks:
+        description: "Inclure les forks ?"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      name-prefix:
+        description: "Filtrer sur un préfixe (optionnel, ex: pulse-)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write # on va committer la mise à jour du YAML
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout .github repo
+        uses: actions/checkout@v4
+
+      - name: Check gh CLI
+        run: gh --version
+
+      - name: Build repo list and update dropdown
+        env:
+          GH_TOKEN: ${{ secrets.ORG_LABELS_TOKEN }} # PAT org avec read:org
+          ORG: ${{ github.repository_owner }}
+          INCLUDE_ARCHIVED: ${{ github.event.inputs.include-archived }}
+          INCLUDE_FORKS: ${{ github.event.inputs.include-forks }}
+          NAME_PREFIX: ${{ github.event.inputs.name-prefix }}
+        run: |
+          node - <<'EOF'
+          const { execSync } = require('child_process');
+          const fs = require('fs');
+
+          const token = process.env.GH_TOKEN;
+          const org = process.env.ORG;
+          const includeArchived = (process.env.INCLUDE_ARCHIVED || 'false') === 'true';
+          const includeForks = (process.env.INCLUDE_FORKS || 'false') === 'true';
+          const prefix = (process.env.NAME_PREFIX || '').trim();
+
+          if (!token) { console.error('Missing ORG_LABELS_TOKEN.'); process.exit(1); }
+
+          function ghJson(args) {
+            const cmd = `gh api ${args} -H "Accept: application/vnd.github+json"`;
+            const out = execSync(cmd, {
+              env: { ...process.env, GH_TOKEN: token },
+              stdio: ['ignore', 'pipe', 'inherit'],
+              encoding: 'utf8'
+            });
+            return JSON.parse(out);
+          }
+
+          // list all repos
+          let page = 1, repos = [];
+          while (true) {
+            const res = ghJson(`orgs/${org}/repos?per_page=100&page=${page}`);
+            if (!res.length) break;
+            repos = repos.concat(res);
+            page++;
+          }
+
+          // filter and sort
+          repos = repos
+            .filter(r => includeArchived || !r.archived)
+            .filter(r => includeForks || !r.fork)
+            .map(r => r.name)
+            .filter(name => !prefix || name.startsWith(prefix))
+            .sort((a,b) => a.localeCompare(b));
+
+          if (!repos.length) {
+            console.error('No repositories match the filters.');
+            process.exit(1);
+          }
+
+          const filePath = '.github/workflows/sync-one-repo.yml';
+          let yml = fs.readFileSync(filePath, 'utf8');
+
+          const start = '          # BEGIN_REPO_OPTIONS';
+          const end   = '          # END_REPO_OPTIONS';
+          const startIdx = yml.indexOf(start);
+          const endIdx = yml.indexOf(end);
+          if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+            console.error('Markers not found in sync-one-repo.yml');
+            process.exit(1);
+          }
+
+          const optionsBlock = [start]
+            .concat(repos.map(r => `          - ${r}`))
+            .concat([end])
+            .join('\n');
+
+          const newYml = yml.slice(0, startIdx) + optionsBlock + yml.slice(endIdx + end.length);
+          if (newYml !== yml) {
+            fs.writeFileSync(filePath, newYml, 'utf8');
+            console.log(`Updated options with ${repos.length} repos.`);
+          } else {
+            console.log('No changes needed.');
+          }
+          EOF
+
+      - name: Commit & push changes (if any)
+        run: |
+          if ! git diff --quiet; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/workflows/sync-one-repo.yml
+            git commit -m "chore: refresh repo dropdown options"
+            git push
+          else
+            echo "No changes to commit."
+          fi
