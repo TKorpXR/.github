@@ -1,0 +1,132 @@
+name: Sync Labels (single repo)
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Nom du dépôt cible (ex: pulse-api)"
+        required: true
+        type: string
+      delete-extraneous:
+        description: "Supprimer les labels non listés dans labels.yml ?"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout .github repo
+        uses: actions/checkout@v4
+
+      - name: Check gh CLI
+        run: gh --version
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install yaml parser
+        run: npm install js-yaml@4
+
+      - name: Run per-repo sync
+        env:
+          GH_TOKEN: ${{ secrets.ORG_LABELS_TOKEN }} # PAT org avec repo + read:org (ou fine-grained équivalent)
+          ORG: ${{ github.repository_owner }}
+          REPO: ${{ github.event.inputs.repo }}
+          DELETE_EXTRA: ${{ github.event.inputs.delete-extraneous }}
+        run: |
+          cat > sync-one.js <<'EOF'
+          const fs = require('fs');
+          const yaml = require('js-yaml');
+          const { execSync } = require('child_process');
+
+          const token = process.env.GH_TOKEN;
+          const org = process.env.ORG;
+          const repo = process.env.REPO;
+          const deleteExtra = (process.env.DELETE_EXTRA || 'false') === 'true';
+
+          if (!token) { console.error('Missing ORG_LABELS_TOKEN.'); process.exit(1); }
+          if (!org || !repo) { console.error('Missing ORG or REPO.'); process.exit(1); }
+
+          const labelsPath = '.github/labels.yml';
+          const labels = yaml.load(fs.readFileSync(labelsPath, 'utf8')) || [];
+          if (!Array.isArray(labels) || labels.length === 0) {
+            console.error('labels.yml is empty or invalid.');
+            process.exit(1);
+          }
+          const canonical = new Map(labels.map(l => [l.name, l]));
+
+          function ghJson(args) {
+            const cmd = `gh api ${args} -H "Accept: application/vnd.github+json"`;
+            const out = execSync(cmd, {
+              env: { ...process.env, GH_TOKEN: token },
+              stdio: ['ignore', 'pipe', 'inherit'],
+              encoding: 'utf8'
+            });
+            return JSON.parse(out);
+          }
+
+          console.log(`Target: ${org}/${repo}`);
+
+          // Récupérer les labels existants (pagination)
+          let existing = [];
+          let p = 1;
+          while (true) {
+            const res = ghJson(`repos/${org}/${repo}/labels?per_page=100&page=${p}`);
+            if (!res.length) break;
+            existing = existing.concat(res);
+            p++;
+          }
+          const existingMap = new Map(existing.map(l => [l.name, l]));
+
+          // Créer / mettre à jour
+          for (const L of labels) {
+            const ex = existingMap.get(L.name);
+            if (!ex) {
+              try {
+                ghJson(`repos/${org}/${repo}/labels -X POST -f name='${L.name}' -f color='${L.color}' -f description='${(L.description || '')}'`);
+                console.log(`  + created: ${L.name}`);
+              } catch {
+                console.error(`  ! create failed: ${L.name}`);
+              }
+            } else {
+              const needsUpdate =
+                (L.color && ex.color.toLowerCase() !== L.color.toLowerCase()) ||
+                ((L.description || '') !== (ex.description || ''));
+
+              if (needsUpdate) {
+                try {
+                  ghJson(`repos/${org}/${repo}/labels/${encodeURIComponent(ex.name)} -X PATCH -f new_name='${L.name}' -f color='${L.color}' -f description='${(L.description || '')}'`);
+                  console.log(`  ~ updated: ${L.name}`);
+                } catch {
+                  console.error(`  ! update failed: ${L.name}`);
+                }
+              } else {
+                console.log(`  = up-to-date: ${L.name}`);
+              }
+            }
+          }
+
+          // Supprimer les labels en trop (optionnel)
+          if (deleteExtra) {
+            for (const exName of existingMap.keys()) {
+              if (!canonical.has(exName)) {
+                try {
+                  ghJson(`repos/${org}/${repo}/labels/${encodeURIComponent(exName)} -X DELETE`);
+                  console.log(`  - deleted: ${exName}`);
+                } catch {
+                  console.error(`  ! delete failed: ${exName}`);
+                }
+              }
+            }
+          }
+          EOF
+
+          node sync-one.js
