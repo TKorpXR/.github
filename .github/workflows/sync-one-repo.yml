@@ -50,10 +50,10 @@ jobs:
           REPO: ${{ github.event.inputs.repo }}
           DELETE_EXTRA: ${{ github.event.inputs.delete-extraneous }}
         run: |
-          cat > sync-one.js <<'EOF'
+          node - <<'EOF'
           const fs = require('fs');
           const yaml = require('js-yaml');
-          const { execSync } = require('child_process');
+          const { execFileSync } = require('child_process');
 
           const token = process.env.GH_TOKEN;
           const org = process.env.ORG;
@@ -63,6 +63,26 @@ jobs:
           if (!token) { console.error('Missing ORG_LABELS_TOKEN.'); process.exit(1); }
           if (!org || !repo) { console.error('Missing ORG or REPO.'); process.exit(1); }
 
+          const env = { ...process.env, GH_TOKEN: token };
+          const H = ['api', '-H', 'Accept: application/vnd.github+json'];
+
+          function ghGET(path) {
+            const out = execFileSync('gh', [...H, path], { env, stdio: ['ignore','pipe','inherit'], encoding: 'utf8' });
+            return JSON.parse(out);
+          }
+          function ghPOST(path, formKVs) {
+            execFileSync('gh', [...H, path, '-X', 'POST', ...formKVs], { env, stdio: ['ignore','pipe','inherit'] });
+          }
+          function ghPATCH(path, formKVs) {
+            execFileSync('gh', [...H, path, '-X', 'PATCH', ...formKVs], { env, stdio: ['ignore','pipe','inherit'] });
+          }
+          function ghDELETE(path) {
+            execFileSync('gh', [...H, path, '-X', 'DELETE'], { env, stdio: ['ignore','pipe','inherit'] });
+          }
+
+          console.log(`Target: ${org}/${repo}`);
+
+          // Charger labels.yml
           const labelsPath = '.github/labels.yml';
           const labels = yaml.load(fs.readFileSync(labelsPath, 'utf8')) || [];
           if (!Array.isArray(labels) || labels.length === 0) {
@@ -71,50 +91,45 @@ jobs:
           }
           const canonical = new Map(labels.map(l => [l.name, l]));
 
-          function ghJson(args) {
-            const cmd = `gh api ${args} -H "Accept: application/vnd.github+json"`;
-            const out = execSync(cmd, {
-              env: { ...process.env, GH_TOKEN: token },
-              stdio: ['ignore', 'pipe', 'inherit'],
-              encoding: 'utf8'
-            });
-            return JSON.parse(out);
-          }
-
-          console.log(`Target: ${org}/${repo}`);
-
-          // Existing labels (paginate)
-          let existing = [];
-          let p = 1;
+          // Récupérer labels existants (pagination)
+          let existing = [], page = 1;
           while (true) {
-            const res = ghJson(`repos/${org}/${repo}/labels?per_page=100&page=${p}`);
+            const res = ghGET(`repos/${org}/${repo}/labels?per_page=100&page=${page}`);
             if (!res.length) break;
             existing = existing.concat(res);
-            p++;
+            page++;
           }
           const existingMap = new Map(existing.map(l => [l.name, l]));
 
-          // Create / update
+          // Créer / mettre à jour
           for (const L of labels) {
             const ex = existingMap.get(L.name);
             if (!ex) {
               try {
-                ghJson(`repos/${org}/${repo}/labels -X POST -f name='${L.name}' -f color='${L.color}' -f description='${(L.description || '')}'`);
+                ghPOST(`repos/${org}/${repo}/labels`, [
+                  '-f', `name=${L.name}`,
+                  '-f', `color=${L.color}`,
+                  '-f', `description=${L.description || ''}`
+                ]);
                 console.log(`  + created: ${L.name}`);
-              } catch {
-                console.error(`  ! create failed: ${L.name}`);
+              } catch (e) {
+                console.error(`  ! create failed: ${L.name} (${e.message})`);
               }
             } else {
               const needsUpdate =
-                (L.color && ex.color.toLowerCase() !== L.color.toLowerCase()) ||
+                (L.color && ex.color?.toLowerCase() !== L.color.toLowerCase()) ||
                 ((L.description || '') !== (ex.description || ''));
-
               if (needsUpdate) {
                 try {
-                  ghJson(`repos/${org}/${repo}/labels/${encodeURIComponent(ex.name)} -X PATCH -f new_name='${L.name}' -f color='${L.color}' -f description='${(L.description || '')}'`);
+                  const encoded = encodeURIComponent(ex.name);
+                  ghPATCH(`repos/${org}/${repo}/labels/${encoded}`, [
+                    '-f', `new_name=${L.name}`,
+                    '-f', `color=${L.color}`,
+                    '-f', `description=${L.description || ''}`
+                  ]);
                   console.log(`  ~ updated: ${L.name}`);
-                } catch {
-                  console.error(`  ! update failed: ${L.name}`);
+                } catch (e) {
+                  console.error(`  ! update failed: ${L.name} (${e.message})`);
                 }
               } else {
                 console.log(`  = up-to-date: ${L.name}`);
@@ -122,19 +137,18 @@ jobs:
             }
           }
 
-          // Delete extras
+          // Supprimer les labels non listés (optionnel)
           if (deleteExtra) {
             for (const exName of existingMap.keys()) {
               if (!canonical.has(exName)) {
                 try {
-                  ghJson(`repos/${org}/${repo}/labels/${encodeURIComponent(exName)} -X DELETE`);
+                  const encoded = encodeURIComponent(exName);
+                  ghDELETE(`repos/${org}/${repo}/labels/${encoded}`);
                   console.log(`  - deleted: ${exName}`);
-                } catch {
-                  console.error(`  ! delete failed: ${exName}`);
+                } catch (e) {
+                  console.error(`  ! delete failed: ${exName} (${e.message})`);
                 }
               }
             }
           }
           EOF
-
-          node sync-one.js
