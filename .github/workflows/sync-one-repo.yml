@@ -80,6 +80,11 @@ jobs:
             execFileSync('gh', [...H, path, '-X', 'DELETE'], { env, stdio: ['ignore','pipe','inherit'] });
           }
 
+          // Helpers de normalisation
+          const str = v => (v ?? '').toString();
+          const normHex = c => str(c).replace(/^#/, '').trim().toLowerCase();
+          const isHex6 = c => /^[0-9a-f]{6}$/.test(c);
+
           console.log(`Target: ${org}/${repo}`);
 
           // Charger labels.yml
@@ -104,36 +109,45 @@ jobs:
           // Créer / mettre à jour
           for (const L of labels) {
             const ex = existingMap.get(L.name);
+            const newColor = normHex(L.color);
+            const newDesc  = str(L.description);
+            if (!isHex6(newColor)) {
+              console.warn(`  ! skipped invalid color for ${L.name}: "${L.color}"`);
+            }
+
             if (!ex) {
               try {
-                ghPOST(`repos/${org}/${repo}/labels`, [
-                  '-f', `name=${L.name}`,
-                  '-f', `color=${L.color}`,
-                  '-f', `description=${L.description || ''}`
-                ]);
+                const form = ['-f', `name=${L.name}`];
+                form.push('-f', `color=${isHex6(newColor) ? newColor : 'cccccc'}`);
+                form.push('-f', `description=${newDesc}`);
+                ghPOST(`repos/${org}/${repo}/labels`, form);
                 console.log(`  + created: ${L.name}`);
               } catch (e) {
                 console.error(`  ! create failed: ${L.name} (${e.message})`);
               }
-            } else {
-              const needsUpdate =
-                (L.color && ex.color?.toLowerCase() !== L.color.toLowerCase()) ||
-                ((L.description || '') !== (ex.description || ''));
-              if (needsUpdate) {
-                try {
-                  const encoded = encodeURIComponent(ex.name);
-                  ghPATCH(`repos/${org}/${repo}/labels/${encoded}`, [
-                    '-f', `new_name=${L.name}`,
-                    '-f', `color=${L.color}`,
-                    '-f', `description=${L.description || ''}`
-                  ]);
-                  console.log(`  ~ updated: ${L.name}`);
-                } catch (e) {
-                  console.error(`  ! update failed: ${L.name} (${e.message})`);
-                }
-              } else {
-                console.log(`  = up-to-date: ${L.name}`);
+              continue;
+            }
+
+            const oldColor = normHex(ex.color);
+            const oldDesc  = str(ex.description);
+
+            const needsUpdate =
+              (isHex6(newColor) && oldColor !== newColor) ||
+              (oldDesc !== newDesc);
+
+            if (needsUpdate) {
+              try {
+                const encoded = encodeURIComponent(ex.name);
+                const form = ['-f', `new_name=${L.name}`];
+                if (isHex6(newColor)) form.push('-f', `color=${newColor}`);
+                form.push('-f', `description=${newDesc}`);
+                ghPATCH(`repos/${org}/${repo}/labels/${encoded}`, form);
+                console.log(`  ~ updated: ${L.name}`);
+              } catch (e) {
+                console.error(`  ! update failed: ${L.name} (${e.message})`);
               }
+            } else {
+              console.log(`  = up-to-date: ${L.name}`);
             }
           }
 
