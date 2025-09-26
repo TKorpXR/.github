@@ -1,0 +1,63 @@
+name: Add issues to TKorpXR project
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+  projects: write
+
+jobs:
+  add-to-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add issue to project
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.ORG_LABELS_TOKEN }}
+          script: |
+            const org = 'TKorpXR';
+            const projectNumber = 1;
+            const issueNodeId = context.payload.issue?.node_id;
+
+            if (!issueNodeId) {
+              core.setFailed('Issue node id introuvable dans l’événement.');
+              return;
+            }
+
+            const data = await github.graphql(
+              `query($org: String!, $number: Int!) {
+                 organization(login: $org) {
+                   projectV2(number: $number) {
+                     id
+                   }
+                 }
+               }`,
+              { org, number: projectNumber }
+            );
+
+            const projectId = data.organization?.projectV2?.id;
+            if (!projectId) {
+              core.setFailed(`Projet ${org}/${projectNumber} introuvable.`);
+              return;
+            }
+
+            try {
+              await github.graphql(
+                `mutation($projectId: ID!, $contentId: ID!) {
+                   addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                     item { id }
+                   }
+                 }`,
+                { projectId, contentId: issueNodeId }
+              );
+              core.info('Issue ajoutée au projet.');
+            } catch (error) {
+              if (/content already exists/i.test(error.message)) {
+                core.info('Issue déjà présente dans le projet, on ignore.');
+              } else {
+                throw error;
+              }
+            }
