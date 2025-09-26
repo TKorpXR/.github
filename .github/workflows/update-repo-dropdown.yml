@@ -22,29 +22,31 @@ on:
         type: string
 
 permissions:
-  workflows: write
-  contents: write
+  contents: write # écrire dans le repo (.github)
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout .github repo
+      # IMPORTANT: pas de creds GitHub par défaut, on push avec PAT ensuite
+      - name: Checkout .github repo (no creds)
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Check gh CLI
         run: gh --version
 
       - name: Build repo list and update dropdown
         env:
-          GH_TOKEN: ${{ secrets.ORG_LABELS_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_LABELS_TOKEN }} # PAT avec read:org (peut être le même que ORG_WORKFLOWS_TOKEN)
           ORG: ${{ github.repository_owner }}
           INCLUDE_ARCHIVED: ${{ github.event.inputs.include-archived }}
           INCLUDE_FORKS: ${{ github.event.inputs.include-forks }}
           NAME_PREFIX: ${{ github.event.inputs.name-prefix }}
         run: |
           node - <<'EOF'
-          const { execSync } = require('child_process');
+          const { execFileSync } = require('child_process');
           const fs = require('fs');
 
           const token = process.env.GH_TOKEN;
@@ -56,9 +58,7 @@ jobs:
           if (!token) { console.error('Missing ORG_LABELS_TOKEN.'); process.exit(1); }
 
           function ghJson(path) {
-            // IMPORTANT : -H AVANT l’URL + URL entre guillemets
-            const cmd = `gh api -H "Accept: application/vnd.github+json" "${path}"`;
-            const out = execSync(cmd, {
+            const out = execFileSync('gh', ['api', '-H', 'Accept: application/vnd.github+json', path], {
               env: { ...process.env, GH_TOKEN: token },
               stdio: ['ignore', 'pipe', 'inherit'],
               encoding: 'utf8'
@@ -66,7 +66,7 @@ jobs:
             return JSON.parse(out);
           }
 
-          // Liste paginée des repos org
+          // list org repos (paginated)
           let page = 1, repos = [];
           while (true) {
             const res = ghJson(`orgs/${org}/repos?per_page=100&page=${page}`);
@@ -75,7 +75,7 @@ jobs:
             page++;
           }
 
-          // Filtrage + tri alpha
+          // filter + sort
           repos = repos
             .filter(r => includeArchived || !r.archived)
             .filter(r => includeForks || !r.fork)
@@ -93,19 +93,19 @@ jobs:
 
           const start = '          # BEGIN_REPO_OPTIONS';
           const end   = '          # END_REPO_OPTIONS';
-          const startIdx = yml.indexOf(start);
-          const endIdx = yml.indexOf(end);
-          if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+          const s = yml.indexOf(start);
+          const e = yml.indexOf(end);
+          if (s === -1 || e === -1 || e < s) {
             console.error('Markers not found in sync-one-repo.yml');
             process.exit(1);
           }
 
-          const optionsBlock = [start]
+          const block = [start]
             .concat(repos.map(r => `          - ${r}`))
             .concat([end])
             .join('\n');
 
-          const newYml = yml.slice(0, startIdx) + optionsBlock + yml.slice(endIdx + end.length);
+          const newYml = yml.slice(0, s) + block + yml.slice(e + end.length);
           if (newYml !== yml) {
             fs.writeFileSync(filePath, newYml, 'utf8');
             console.log(`Updated options with ${repos.length} repos.`);
@@ -113,18 +113,24 @@ jobs:
             console.log('No changes needed.');
           }
           EOF
-      - name: Commit & push changes (if any)
+
+      - name: Show preview (debug)
+        run: sed -n '1,140p' .github/workflows/sync-one-repo.yml
+
+      # 👉 Push avec PAT ayant le scope `workflow`
+      - name: Commit & push with PAT
+        env:
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          PAT: ${{ secrets.ORG_LABELS_TOKEN }}
         run: |
-          # Vérifie s'il y a des modifs sur le workflow ciblé
           if ! git diff --quiet -- .github/workflows/sync-one-repo.yml; then
-            git config user.name  "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git config user.name  "TKorpXR bot"
+            git config user.email "actions@users.noreply.github.com"
             git add .github/workflows/sync-one-repo.yml
             git commit -m "chore: refresh repo dropdown options"
-            git push
+            git remote set-url origin https://x-access-token:${PAT}@github.com/${REPO}.git
+            git push origin HEAD:${BRANCH}
           else
             echo "No changes to commit."
           fi
-      - name: Show first lines of sync-one-repo.yml (debug)
-        run: |
-          sed -n '1,120p' .github/workflows/sync-one-repo.yml
