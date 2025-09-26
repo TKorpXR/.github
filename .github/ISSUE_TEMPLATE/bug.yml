@@ -1,6 +1,8 @@
 ---
 name: 💣 Bug
 description: Signaler un bug
+projects:
+  - TKorpXR/1
 
 type: Bug
 body:

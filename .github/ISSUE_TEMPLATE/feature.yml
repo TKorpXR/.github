@@ -1,6 +1,8 @@
 ---
 name: 🚀 Feature
 description: Demander une nouvelle fonctionnalité et/ou une amélioration
+projects:
+  - TKorpXR/1
 type: Feature
 body:
   - type: dropdown

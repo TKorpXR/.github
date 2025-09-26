@@ -1,6 +1,8 @@
 ---
 name: 📌 Task
 description: Prévoir une tâche hors bug ou nouvelle fonctionnalité (tests, configuration, traduction, etc)
+projects:
+  - TKorpXR/1
 type: Task
 body:
   - type: dropdown
