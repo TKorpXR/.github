@@ -9,7 +9,11 @@ on:
         type: choice
         options:
           # BEGIN_REPO_OPTIONS (auto-updated)
-          - example-repo
+          - pulse-web-interface
+          - pulse-app-pilotage
+          - pulse-mdm-android-service
+          - Graffwall_V3
+          - pulse-mdm-server
           # END_REPO_OPTIONS
       delete-extraneous:
         description: "Supprimer les labels non listés dans labels.yml ?"
