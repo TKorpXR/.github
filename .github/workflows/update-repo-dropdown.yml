@@ -22,7 +22,8 @@ on:
         type: string
 
 permissions:
-  contents: write # on va committer la mise à jour du YAML
+  workflows: write
+  contents: write
 
 jobs:
   update:
