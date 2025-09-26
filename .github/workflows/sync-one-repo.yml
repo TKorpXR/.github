@@ -94,7 +94,25 @@ jobs:
             console.error('labels.yml is empty or invalid.');
             process.exit(1);
           }
-          const canonical = new Map(labels.map(l => [l.name, l]));
+          const canonical = new Map();
+          const orderedLabels = [];
+          for (const raw of labels) {
+            const labelName = raw?.name;
+            if (!labelName) {
+              console.warn('  ! skipped label without a name entry');
+              continue;
+            }
+            if (canonical.has(labelName)) {
+              console.warn(`  ! duplicate label entry skipped: ${labelName}`);
+              continue;
+            }
+            canonical.set(labelName, raw);
+            orderedLabels.push(raw);
+          }
+          if (orderedLabels.length === 0) {
+            console.error('labels.yml has no usable entries.');
+            process.exit(1);
+          }
 
           // Récupérer labels existants (pagination)
           let existing = [], page = 1;
@@ -107,7 +125,7 @@ jobs:
           const existingMap = new Map(existing.map(l => [l.name, l]));
 
           // Créer / mettre à jour
-          for (const L of labels) {
+          for (const L of orderedLabels) {
             const ex = existingMap.get(L.name);
             const newColor = normHex(L.color);
             const newDesc  = str(L.description);
