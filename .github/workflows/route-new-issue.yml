@@ -166,9 +166,31 @@ jobs:
               return;
             }
 
-            let issue = context.payload.issue;
+            const currentIssue = await github.graphql(
+              `query($issueId: ID!) {
+                node(id: $issueId) {
+                  ... on Issue {
+                    id
+                    number
+                    url
+                    repository { name }
+                  }
+                }
+              }`,
+              { issueId: context.payload.issue.node_id },
+            );
 
-            if (route.repository !== context.repo.repo) {
+            if (!currentIssue.node?.id) {
+              throw new Error('Issue introuvable à partir de son node ID.');
+            }
+
+            let issue = {
+              node_id: currentIssue.node.id,
+              number: currentIssue.node.number,
+              html_url: currentIssue.node.url,
+            };
+
+            if (route.repository !== currentIssue.node.repository.name) {
               const destination = await github.graphql(
                 `query($owner: String!, $name: String!) {
                   repository(owner: $owner, name: $name) { id }
