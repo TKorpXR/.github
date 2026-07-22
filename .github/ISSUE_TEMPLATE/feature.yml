@@ -1,42 +1,51 @@
 ---
-name: 🚀 Feature
-description: Demander une nouvelle fonctionnalité et/ou une amélioration
-projects:
-  - TKorpXR/1
+name: "🚀 Feature"
+description: Proposer une nouvelle fonctionnalité ou une amélioration
 type: Feature
 body:
   - type: dropdown
-    id: project
+    id: product
     attributes:
-      label: "Périmètre"
+      label: Produit concerné
+      description: Ce choix détermine automatiquement le repository et le champ Entity.
       options:
-        - 💻 Interface web
-        - 📱 Appli mobile
-        - 🧩 Mdm
-        - 🥽 Appli VR
-        - Autre (préciser dans la description du problème, et l'option sera ajoutée !)
+        - Web
+        - Mobile app
+        - Desktop
+        - MDM Android
+        - MDM Serveur
+        - VR app
+        - Autre
     validations:
       required: true
-  - type: checkboxes
-    id: type-feature
+  - type: dropdown
+    id: request-type
     attributes:
-      label: "Préciser le type de la demande"
+      label: Type de demande
       options:
-        - label: Amélioration
-        - label: Nouvelle fonctionnalité
+        - Amélioration
+        - Nouvelle fonctionnalité
+    validations:
+      required: true
   - type: input
     id: url
     attributes:
-      label: "Url de la page"
-      description: "Aides-nous à localiser le problème."
-      placeholder: "https://pulse-xr.com/page-avec-bug"
+      label: URL ou écran concerné
+      description: Indique une URL, une page, un écran ou un chemin si la demande concerne une zone existante.
+      placeholder: https://pulse-xr.com/page-concernee
     validations:
       required: false
   - type: textarea
-    id: feature-detailed
+    id: need
     attributes:
-      label: "Description complète de la demande"
-      description: "Un résumé de la fonctionnalité ou de l'amélioration demandée. N'hésite pas à ajouter une ou plusieurs captures d'écran"
+      label: Besoin ou problème à résoudre
+      description: Explique le contexte, les utilisateurs concernés et la valeur attendue.
     validations:
       required: true
-
+  - type: textarea
+    id: expected-solution
+    attributes:
+      label: Solution ou résultat attendu
+      description: Décris le comportement souhaité et ajoute des captures ou exemples si nécessaire.
+    validations:
+      required: true
