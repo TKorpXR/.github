@@ -1,0 +1,247 @@
+name: Route new Pulse issues
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  route:
+    if: github.repository == 'TKorpXR/.github'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Transfer issue and configure project fields
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_ROUTER_TOKEN || secrets.ORG_LABELS_TOKEN }}
+          script: |
+            const ORG = 'TKorpXR';
+            const PROJECT_ID = 'PVT_kwDOCnLJI84AkpBo';
+            const STATUS_FIELD_ID = 'PVTSSF_lADOCnLJI84AkpBozgc0WBA';
+            const QUALIFY_STATUS_ID = '443ad84f';
+            const ENTITY_FIELD_ID = 'PVTSSF_lADOCnLJI84AkpBozg19_Ts';
+
+            const routes = {
+              'Web': {
+                repository: 'pulse-web-interface',
+                entity: 'Web',
+                entityOptionId: '9417e9a1',
+              },
+              'Mobile app': {
+                repository: 'pulse-app-pilotage',
+                entity: 'Mobile app',
+                entityOptionId: '8bacd380',
+              },
+              'Desktop': {
+                repository: 'pulse-desktop',
+                entity: 'Desktop',
+                entityOptionId: 'c71e7231',
+              },
+              'MDM Android': {
+                repository: 'pulse-mdm-android-service',
+                entity: 'MDM',
+                entityOptionId: '06830893',
+              },
+              'MDM Serveur': {
+                repository: 'pulse-mdm-server',
+                entity: 'MDM',
+                entityOptionId: '06830893',
+              },
+              'VR app': {
+                repository: 'pulse-home',
+                entity: 'VR app',
+                entityOptionId: 'e53b5660',
+              },
+              'Autre': {
+                repository: '.github',
+                entity: 'Autre',
+                entityOptionId: '4d0938ce',
+              },
+            };
+
+            function extractProduct(body) {
+              const match = body.match(/### Produit concerné\s*\r?\n+\s*([^\r\n]+)/i);
+              return match?.[1]?.trim();
+            }
+
+            async function findProjectItemId(contentId) {
+              let after = null;
+
+              do {
+                const data = await github.graphql(
+                  `query($projectId: ID!, $after: String) {
+                    node(id: $projectId) {
+                      ... on ProjectV2 {
+                        items(first: 100, after: $after) {
+                          nodes {
+                            id
+                            content {
+                              ... on Issue { id }
+                            }
+                          }
+                          pageInfo {
+                            hasNextPage
+                            endCursor
+                          }
+                        }
+                      }
+                    }
+                  }`,
+                  { projectId: PROJECT_ID, after },
+                );
+
+                const items = data.node?.items;
+                const match = items?.nodes?.find((item) => item.content?.id === contentId);
+                if (match) return match.id;
+
+                if (!items?.pageInfo?.hasNextPage) return null;
+                after = items.pageInfo.endCursor;
+              } while (after);
+
+              return null;
+            }
+
+            async function addToProject(contentId) {
+              try {
+                const result = await github.graphql(
+                  `mutation($projectId: ID!, $contentId: ID!) {
+                    addProjectV2ItemById(input: {
+                      projectId: $projectId,
+                      contentId: $contentId
+                    }) {
+                      item { id }
+                    }
+                  }`,
+                  { projectId: PROJECT_ID, contentId },
+                );
+                return result.addProjectV2ItemById.item.id;
+              } catch (error) {
+                if (!/already exists/i.test(error.message)) throw error;
+
+                const existingItemId = await findProjectItemId(contentId);
+                if (!existingItemId) {
+                  throw new Error('Issue déjà présente dans le projet, mais item introuvable.');
+                }
+                return existingItemId;
+              }
+            }
+
+            async function setSingleSelect(itemId, fieldId, optionId) {
+              await github.graphql(
+                `mutation(
+                  $projectId: ID!,
+                  $itemId: ID!,
+                  $fieldId: ID!,
+                  $optionId: String!
+                ) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId,
+                    itemId: $itemId,
+                    fieldId: $fieldId,
+                    value: { singleSelectOptionId: $optionId }
+                  }) {
+                    projectV2Item { id }
+                  }
+                }`,
+                {
+                  projectId: PROJECT_ID,
+                  itemId,
+                  fieldId,
+                  optionId,
+                },
+              );
+            }
+
+            const product = extractProduct(context.payload.issue?.body || '');
+            const route = routes[product];
+
+            if (!route) {
+              core.setFailed(
+                `Produit absent ou inconnu: ${product || 'aucune valeur'}. ` +
+                'Utiliser un formulaire officiel pour créer le ticket.',
+              );
+              return;
+            }
+
+            const currentIssue = await github.graphql(
+              `query($issueId: ID!) {
+                node(id: $issueId) {
+                  ... on Issue {
+                    id
+                    number
+                    url
+                    repository { name }
+                  }
+                }
+              }`,
+              { issueId: context.payload.issue.node_id },
+            );
+
+            if (!currentIssue.node?.id) {
+              throw new Error('Issue introuvable à partir de son node ID.');
+            }
+
+            let issue = {
+              node_id: currentIssue.node.id,
+              number: currentIssue.node.number,
+              html_url: currentIssue.node.url,
+            };
+
+            if (route.repository !== currentIssue.node.repository.name) {
+              const destination = await github.graphql(
+                `query($owner: String!, $name: String!) {
+                  repository(owner: $owner, name: $name) { id }
+                }`,
+                { owner: ORG, name: route.repository },
+              );
+
+              if (!destination.repository?.id) {
+                throw new Error(`Repository cible introuvable: ${ORG}/${route.repository}`);
+              }
+
+              const transfer = await github.graphql(
+                `mutation($issueId: ID!, $repositoryId: ID!) {
+                  transferIssue(input: {
+                    issueId: $issueId,
+                    repositoryId: $repositoryId,
+                    createLabelsIfMissing: true
+                  }) {
+                    issue {
+                      id
+                      number
+                      url
+                      repository { nameWithOwner }
+                    }
+                  }
+                }`,
+                {
+                  issueId: issue.node_id,
+                  repositoryId: destination.repository.id,
+                },
+              );
+
+              issue = {
+                node_id: transfer.transferIssue.issue.id,
+                number: transfer.transferIssue.issue.number,
+                html_url: transfer.transferIssue.issue.url,
+              };
+              core.info(`Issue transférée vers ${ORG}/${route.repository}.`);
+            }
+
+            const itemId = await addToProject(issue.node_id);
+            await setSingleSelect(itemId, STATUS_FIELD_ID, QUALIFY_STATUS_ID);
+            await setSingleSelect(itemId, ENTITY_FIELD_ID, route.entityOptionId);
+
+            core.summary
+              .addHeading('Ticket routé')
+              .addTable([
+                [{ data: 'Produit', header: true }, product],
+                [{ data: 'Repository', header: true }, `${ORG}/${route.repository}`],
+                [{ data: 'Entity', header: true }, route.entity],
+                [{ data: 'Status', header: true }, 'Retour Clô / a classifer'],
+              ])
+              .addLink('Ouvrir le ticket', issue.html_url);
+            await core.summary.write();

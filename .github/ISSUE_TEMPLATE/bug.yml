@@ -1,34 +1,63 @@
 ---
-name: 💣 Bug
-description: Signaler un bug
-projects:
-  - TKorpXR/1
-
+name: "💣 Bug"
+description: Signaler un dysfonctionnement sur un produit Pulse
 type: Bug
 body:
   - type: dropdown
-    id: project
+    id: product
     attributes:
-      label: "Périmètre"
+      label: Produit concerné
+      description: Ce choix détermine automatiquement le repository et le champ Entity.
       options:
-        - 💻 Interface web
-        - 📱 Appli mobile
-        - 🧩 Mdm
-        - 🥽 Appli VR
-        - Autre (préciser dans la description du problème, et l'option sera ajoutée !)
+        - Web
+        - Mobile app
+        - Desktop
+        - MDM Android
+        - MDM Serveur
+        - VR app
+        - Autre
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environnement
+      options:
+        - Production
+        - Préproduction
+        - Développement / local
+        - Non déterminé
     validations:
       required: true
   - type: input
     id: url
     attributes:
-      label: Url de la page
-      description: "Aides-nous à localiser le problème."
-      placeholder: https:pulse-xr.com/page-avec-bug
+      label: URL ou écran concerné
+      description: Indique une URL, une page, un écran ou un chemin permettant de localiser le problème.
+      placeholder: https://pulse-xr.com/page-concernee
     validations:
       required: false
   - type: textarea
     id: bug-description
     attributes:
-      label: Décris-nous le problème le plus précisement possible.
+      label: Description du problème
+      description: Décris précisément ce qui se passe et ajoute des captures ou des logs si nécessaire.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Étapes de reproduction
+      description: Liste les actions permettant de reproduire le problème.
+      placeholder: |
+        1. Ouvrir…
+        2. Cliquer sur…
+        3. Constater…
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportement attendu
     validations:
       required: true

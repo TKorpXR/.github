@@ -1,45 +1,55 @@
 ---
-name: 📌 Task
-description: Prévoir une tâche hors bug ou nouvelle fonctionnalité (tests, configuration, traduction, etc)
-projects:
-  - TKorpXR/1
+name: "📌 Task"
+description: Planifier une tâche technique ou opérationnelle
 type: Task
 body:
   - type: dropdown
-    id: project
+    id: product
     attributes:
-      label: "Périmètre"
+      label: Produit concerné
+      description: Ce choix détermine automatiquement le repository et le champ Entity.
       options:
-        - 💻 Interface web
-        - 📱 Appli mobile
-        - 🧩 Mdm
-        - 🥽 Appli VR
-        - Autre (préciser dans la description du problème, et l'option sera ajoutée !)
+        - Web
+        - Mobile app
+        - Desktop
+        - MDM Android
+        - MDM Serveur
+        - VR app
+        - Autre
     validations:
       required: true
-  - type: checkboxes
-    id: type-feature
+  - type: dropdown
+    id: task-type
     attributes:
-      label: "Préciser le type de la tâche. (Si aucune option ne correspond, choisir 'Autre' et indiquer le type dans le champ de description)"
+      label: Type de tâche
       options:
-        - label: Tests
-        - label: Traduction
-        - label: Sécurité
-        - label: Configuration
-        - label: Factorisation
-        - label: Autre
+        - Tests
+        - Traduction
+        - Sécurité
+        - Configuration
+        - Refactorisation
+        - Documentation
+        - Autre
+    validations:
+      required: true
   - type: input
-    id: url
+    id: target
     attributes:
-      label: "Cible"
-      description: "Aides-nous à localiser le problème."
-      placeholder: "https://pulse-xr.com/page-avec-bug"
+      label: Cible
+      description: Indique une URL, un écran, un composant ou un service concerné.
     validations:
       required: false
   - type: textarea
-    id: feature-detailed
+    id: task-description
     attributes:
-      label: "Description complète de la tâche"
-      description: "Un résumé de la tâche demandée. N'hésite pas à ajouter une ou plusieurs captures d'écran"
+      label: Description de la tâche
+      description: Décris le travail à réaliser et le résultat attendu.
     validations:
       required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Critères de validation
+      description: Indique comment vérifier que la tâche est terminée.
+    validations:
+      required: false
