@@ -1,0 +1,394 @@
+name: Migrate legacy Pulse issues
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Dry-run affiche le plan sans modifier les tickets"
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - execute
+      entity:
+        description: "Limiter la migration à une Entity"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - Web
+          - Mobile app
+          - Desktop
+          - VR app
+      issue-number:
+        description: "Numéro précis dans .github à traiter (vide = tous)"
+        required: false
+        default: ""
+        type: string
+      max-issues:
+        description: "Nombre maximal de tickets à traiter (0 = aucune limite)"
+        required: true
+        default: "0"
+        type: string
+      confirmation:
+        description: "En mode execute, saisir exactement TRANSFER"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migrate-legacy-pulse-issues
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preview or migrate legacy issues
+        uses: actions/github-script@v8
+        env:
+          MIGRATION_MODE: ${{ inputs.mode }}
+          ENTITY_FILTER: ${{ inputs.entity }}
+          ISSUE_NUMBER: ${{ inputs['issue-number'] }}
+          MAX_ISSUES: ${{ inputs['max-issues'] }}
+          TRANSFER_CONFIRMATION: ${{ inputs.confirmation }}
+        with:
+          github-token: ${{ secrets.PROJECT_ROUTER_TOKEN || secrets.ORG_LABELS_TOKEN }}
+          script: |
+            const ORG = 'TKorpXR';
+            const SOURCE_REPOSITORY = '.github';
+            const PROJECT_ID = 'PVT_kwDOCnLJI84AkpBo';
+            const PRESERVED_FIELDS = new Set(['Status', 'Entity', 'Priority', 'Size']);
+
+            const routes = {
+              Web: 'pulse-web-interface',
+              'Mobile app': 'pulse-app-pilotage',
+              Desktop: 'pulse-desktop',
+              'VR app': 'pulse-home',
+            };
+
+            const mode = process.env.MIGRATION_MODE;
+            const entityFilter = process.env.ENTITY_FILTER;
+            const confirmation = process.env.TRANSFER_CONFIRMATION;
+            const issueNumberInput = process.env.ISSUE_NUMBER.trim();
+            const maxIssuesInput = process.env.MAX_ISSUES.trim();
+            const issueNumber = issueNumberInput ? Number.parseInt(issueNumberInput, 10) : null;
+            const maxIssues = Number.parseInt(maxIssuesInput, 10);
+
+            if (issueNumberInput && (!Number.isInteger(issueNumber) || issueNumber <= 0)) {
+              core.setFailed(`issue-number invalide: ${issueNumberInput}`);
+              return;
+            }
+
+            if (!Number.isInteger(maxIssues) || maxIssues < 0) {
+              core.setFailed(`max-issues invalide: ${maxIssuesInput}`);
+              return;
+            }
+
+            if (mode === 'execute' && confirmation !== 'TRANSFER') {
+              core.setFailed('Confirmation invalide. Saisir exactement TRANSFER pour exécuter les transferts.');
+              return;
+            }
+
+            async function getProjectItems() {
+              const items = [];
+              let after = null;
+
+              do {
+                const data = await github.graphql(
+                  `query($projectId: ID!, $after: String) {
+                    node(id: $projectId) {
+                      ... on ProjectV2 {
+                        items(first: 100, after: $after) {
+                          nodes {
+                            id
+                            content {
+                              ... on Issue {
+                                id
+                                number
+                                title
+                                url
+                                state
+                                repository { name }
+                              }
+                            }
+                            fieldValues(first: 30) {
+                              nodes {
+                                ... on ProjectV2ItemFieldSingleSelectValue {
+                                  name
+                                  optionId
+                                  field {
+                                    ... on ProjectV2SingleSelectField { id name }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                          pageInfo { hasNextPage endCursor }
+                        }
+                      }
+                    }
+                  }`,
+                  { projectId: PROJECT_ID, after },
+                );
+
+                const page = data.node?.items;
+                if (!page) throw new Error('Projet Pulse introuvable ou inaccessible.');
+                items.push(...page.nodes);
+                after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+              } while (after);
+
+              return items;
+            }
+
+            function getSingleSelectValues(item) {
+              return item.fieldValues.nodes
+                .filter((value) =>
+                  value.field?.id &&
+                  value.field?.name &&
+                  value.optionId &&
+                  PRESERVED_FIELDS.has(value.field.name),
+                )
+                .map((value) => ({
+                  fieldId: value.field.id,
+                  fieldName: value.field.name,
+                  optionId: value.optionId,
+                  optionName: value.name,
+                }));
+            }
+
+            function getEntity(item) {
+              return getSingleSelectValues(item)
+                .find((value) => value.fieldName === 'Entity')?.optionName;
+            }
+
+            async function transferIssue(issueId, destinationRepository) {
+              const destination = await github.graphql(
+                `query($owner: String!, $name: String!) {
+                  repository(owner: $owner, name: $name) { id }
+                }`,
+                { owner: ORG, name: destinationRepository },
+              );
+
+              if (!destination.repository?.id) {
+                throw new Error(`Repository cible introuvable: ${ORG}/${destinationRepository}`);
+              }
+
+              const result = await github.graphql(
+                `mutation($issueId: ID!, $repositoryId: ID!) {
+                  transferIssue(input: {
+                    issueId: $issueId,
+                    repositoryId: $repositoryId,
+                    createLabelsIfMissing: true
+                  }) {
+                    issue {
+                      id
+                      number
+                      title
+                      url
+                      repository { nameWithOwner }
+                    }
+                  }
+                }`,
+                { issueId, repositoryId: destination.repository.id },
+              );
+
+              return result.transferIssue.issue;
+            }
+
+            async function findProjectItemId(contentId) {
+              const items = await getProjectItems();
+              return items.find((item) => item.content?.id === contentId)?.id || null;
+            }
+
+            async function addOrFindProjectItem(contentId) {
+              try {
+                const result = await github.graphql(
+                  `mutation($projectId: ID!, $contentId: ID!) {
+                    addProjectV2ItemById(input: {
+                      projectId: $projectId,
+                      contentId: $contentId
+                    }) {
+                      item { id }
+                    }
+                  }`,
+                  { projectId: PROJECT_ID, contentId },
+                );
+                return result.addProjectV2ItemById.item.id;
+              } catch (error) {
+                if (!/already exists/i.test(error.message)) throw error;
+                const existingId = await findProjectItemId(contentId);
+                if (!existingId) throw new Error('Item existant introuvable après le transfert.');
+                return existingId;
+              }
+            }
+
+            async function restoreSingleSelect(itemId, value) {
+              await github.graphql(
+                `mutation(
+                  $projectId: ID!,
+                  $itemId: ID!,
+                  $fieldId: ID!,
+                  $optionId: String!
+                ) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId,
+                    itemId: $itemId,
+                    fieldId: $fieldId,
+                    value: { singleSelectOptionId: $optionId }
+                  }) {
+                    projectV2Item { id }
+                  }
+                }`,
+                {
+                  projectId: PROJECT_ID,
+                  itemId,
+                  fieldId: value.fieldId,
+                  optionId: value.optionId,
+                },
+              );
+            }
+
+            const projectItems = await getProjectItems();
+            const sourceItems = projectItems.filter((item) =>
+              item.content?.repository?.name === SOURCE_REPOSITORY &&
+              item.content?.state === 'OPEN',
+            );
+
+            const skippedCounts = {
+              'Entity vide': 0,
+              'Entity MDM ambiguë': 0,
+              'Entity Autre': 0,
+              'Entity inconnue': 0,
+              'Filtre Entity': 0,
+              'Filtre numéro de ticket': 0,
+            };
+
+            let candidates = [];
+            for (const item of sourceItems) {
+              const entity = getEntity(item);
+              if (!entity) {
+                skippedCounts['Entity vide']++;
+                continue;
+              }
+              if (entity === 'MDM') {
+                skippedCounts['Entity MDM ambiguë']++;
+                continue;
+              }
+              if (entity === 'Autre') {
+                skippedCounts['Entity Autre']++;
+                continue;
+              }
+              if (!routes[entity]) {
+                skippedCounts['Entity inconnue']++;
+                continue;
+              }
+              if (entityFilter !== 'all' && entity !== entityFilter) {
+                skippedCounts['Filtre Entity']++;
+                continue;
+              }
+              if (issueNumber !== null && item.content.number !== issueNumber) {
+                skippedCounts['Filtre numéro de ticket']++;
+                continue;
+              }
+
+              candidates.push({
+                item,
+                entity,
+                destination: routes[entity],
+                preservedValues: getSingleSelectValues(item),
+              });
+            }
+
+            candidates.sort((a, b) => a.item.content.number - b.item.content.number);
+            if (maxIssues > 0) candidates = candidates.slice(0, maxIssues);
+
+            core.info(`${candidates.length} ticket(s) candidat(s), mode=${mode}.`);
+            for (const candidate of candidates) {
+              core.info(
+                `[${mode}] ${candidate.item.content.url} -> ` +
+                `${ORG}/${candidate.destination} (Entity=${candidate.entity})`,
+              );
+            }
+
+            const results = [];
+            if (mode === 'execute') {
+              for (const candidate of candidates) {
+                const source = candidate.item.content;
+                try {
+                  const transferred = await transferIssue(source.id, candidate.destination);
+                  const projectItemId = await addOrFindProjectItem(transferred.id);
+                  for (const value of candidate.preservedValues) {
+                    await restoreSingleSelect(projectItemId, value);
+                  }
+
+                  results.push({
+                    result: 'Transféré',
+                    source: source.url,
+                    destination: transferred.url,
+                    entity: candidate.entity,
+                  });
+                  core.info(`${source.url} transféré vers ${transferred.url}.`);
+                } catch (error) {
+                  results.push({
+                    result: `Erreur: ${error.message}`,
+                    source: source.url,
+                    destination: `${ORG}/${candidate.destination}`,
+                    entity: candidate.entity,
+                  });
+                  core.error(`${source.url}: ${error.stack || error.message}`);
+                }
+              }
+            } else {
+              for (const candidate of candidates) {
+                results.push({
+                  result: 'Prévisualisation',
+                  source: candidate.item.content.url,
+                  destination: `${ORG}/${candidate.destination}`,
+                  entity: candidate.entity,
+                });
+              }
+            }
+
+            core.summary
+              .addHeading(mode === 'execute' ? 'Migration des anciens tickets' : 'Prévisualisation de la migration')
+              .addRaw(
+                `**${candidates.length}** ticket(s) sélectionné(s) sur ` +
+                `**${sourceItems.length}** ticket(s) ouvert(s) de .github présents dans le projet.\n\n`,
+              );
+
+            if (results.length) {
+              core.summary.addTable([
+                [
+                  { data: 'Résultat', header: true },
+                  { data: 'Source', header: true },
+                  { data: 'Destination', header: true },
+                  { data: 'Entity', header: true },
+                ],
+                ...results.map((result) => [
+                  result.result,
+                  result.source,
+                  result.destination,
+                  result.entity,
+                ]),
+              ]);
+            }
+
+            core.summary.addHeading('Tickets ignorés', 2).addTable([
+              [
+                { data: 'Raison', header: true },
+                { data: 'Nombre', header: true },
+              ],
+              ...Object.entries(skippedCounts).map(([reason, count]) => [reason, String(count)]),
+            ]);
+
+            await core.summary.write();
+
+            const errors = results.filter((result) => result.result.startsWith('Erreur:'));
+            if (errors.length) {
+              core.setFailed(`${errors.length} transfert(s) en erreur. Consulter le résumé du job.`);
+            }
