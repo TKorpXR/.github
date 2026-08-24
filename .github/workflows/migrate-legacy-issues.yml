@@ -99,8 +99,10 @@ jobs:
               let after = null;
 
               do {
-                const data = await github.graphql(
-                  `query($projectId: ID!, $after: String) {
+                let data;
+                try {
+                  data = await github.graphql(
+                    `query($projectId: ID!, $after: String) {
                     node(id: $projectId) {
                       ... on ProjectV2 {
                         items(first: 100, after: $after) {
@@ -132,9 +134,25 @@ jobs:
                         }
                       }
                     }
-                  }`,
-                  { projectId: PROJECT_ID, after },
-                );
+                    }`,
+                    { projectId: PROJECT_ID, after },
+                  );
+                } catch (error) {
+                  const graphQlErrors = Array.isArray(error.errors)
+                    ? error.errors.map(({ type, path, locations, message }) => ({
+                        type,
+                        path,
+                        locations,
+                        message,
+                      }))
+                    : [];
+
+                  core.error(
+                    `Échec de lecture du Project après le curseur ${after || '<initial>'}: ` +
+                    JSON.stringify(graphQlErrors),
+                  );
+                  throw error;
+                }
 
                 const page = data.node?.items;
                 if (!page) throw new Error('Projet Pulse introuvable ou inaccessible.');
