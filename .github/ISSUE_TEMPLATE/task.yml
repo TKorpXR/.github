@@ -2,6 +2,7 @@
 name: "📌 Task"
 description: Planifier une tâche technique ou opérationnelle
 type: Task
+projects: ["TKorpXR/1"]
 body:
   - type: dropdown
     id: product

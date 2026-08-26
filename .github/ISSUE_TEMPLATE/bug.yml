@@ -2,6 +2,7 @@
 name: "💣 Bug"
 description: Signaler un dysfonctionnement sur un produit Pulse
 type: Bug
+projects: ["TKorpXR/1"]
 body:
   - type: dropdown
     id: product

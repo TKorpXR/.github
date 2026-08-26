@@ -2,7 +2,7 @@ name: Route new Pulse issues
 
 on:
   issues:
-    types: [opened]
+    types: [opened, edited]
 
 permissions:
   contents: read
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Transfer issue and configure project fields
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.PROJECT_ROUTER_TOKEN || secrets.ORG_LABELS_TOKEN }}
           script: |
@@ -117,7 +117,10 @@ jobs:
                   }`,
                   { projectId: PROJECT_ID, contentId },
                 );
-                return result.addProjectV2ItemById.item.id;
+                return {
+                  id: result.addProjectV2ItemById.item.id,
+                  created: true,
+                };
               } catch (error) {
                 if (!/already exists/i.test(error.message)) throw error;
 
@@ -125,7 +128,7 @@ jobs:
                 if (!existingItemId) {
                   throw new Error('Issue déjà présente dans le projet, mais item introuvable.');
                 }
-                return existingItemId;
+                return { id: existingItemId, created: false };
               }
             }
 
@@ -159,10 +162,17 @@ jobs:
             const route = routes[product];
 
             if (!route) {
-              core.setFailed(
+              core.warning(
                 `Produit absent ou inconnu: ${product || 'aucune valeur'}. ` +
-                'Utiliser un formulaire officiel pour créer le ticket.',
+                'Le ticket sera retraité automatiquement après ajout du champ.',
               );
+              core.summary
+                .addHeading('Ticket en attente de routage')
+                .addRaw(
+                  'Ajoutez un champ `Produit concerné` valide au ticket. ' +
+                  'Le workflow se relancera automatiquement après modification.',
+                );
+              await core.summary.write();
               return;
             }
 
@@ -231,9 +241,11 @@ jobs:
               core.info(`Issue transférée vers ${ORG}/${route.repository}.`);
             }
 
-            const itemId = await addToProject(issue.node_id);
-            await setSingleSelect(itemId, STATUS_FIELD_ID, QUALIFY_STATUS_ID);
-            await setSingleSelect(itemId, ENTITY_FIELD_ID, route.entityOptionId);
+            const projectItem = await addToProject(issue.node_id);
+            if (projectItem.created) {
+              await setSingleSelect(projectItem.id, STATUS_FIELD_ID, QUALIFY_STATUS_ID);
+            }
+            await setSingleSelect(projectItem.id, ENTITY_FIELD_ID, route.entityOptionId);
 
             core.summary
               .addHeading('Ticket routé')

@@ -1,0 +1,357 @@
+name: Reconcile Pulse issues
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Dry-run affiche le plan sans modifier les tickets"
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - execute
+      lookback-days:
+        description: "Retraiter les tickets modifiés depuis ce nombre de jours"
+        required: true
+        default: "14"
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: reconcile-pulse-issues
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reconcile repository, project and fields
+        uses: actions/github-script@v8
+        env:
+          RECONCILE_MODE: ${{ github.event_name == 'schedule' && 'execute' || inputs.mode }}
+          LOOKBACK_DAYS: ${{ github.event_name == 'schedule' && '14' || inputs['lookback-days'] }}
+        with:
+          github-token: ${{ secrets.PROJECT_ROUTER_TOKEN }}
+          script: |
+            const ORG = 'TKorpXR';
+            const PROJECT_ID = 'PVT_kwDOCnLJI84AkpBo';
+            const STATUS_FIELD_ID = 'PVTSSF_lADOCnLJI84AkpBozgc0WBA';
+            const QUALIFY_STATUS_ID = '443ad84f';
+            const ENTITY_FIELD_ID = 'PVTSSF_lADOCnLJI84AkpBozg19_Ts';
+
+            const routes = {
+              Web: {
+                repository: 'pulse-web-interface',
+                entity: 'Web',
+                entityOptionId: '9417e9a1',
+              },
+              'Mobile app': {
+                repository: 'pulse-app-pilotage',
+                entity: 'Mobile app',
+                entityOptionId: '8bacd380',
+              },
+              Desktop: {
+                repository: 'pulse-desktop',
+                entity: 'Desktop',
+                entityOptionId: 'c71e7231',
+              },
+              'MDM Android': {
+                repository: 'pulse-mdm-android-service',
+                entity: 'MDM',
+                entityOptionId: '06830893',
+              },
+              'MDM Serveur': {
+                repository: 'pulse-mdm-server',
+                entity: 'MDM',
+                entityOptionId: '06830893',
+              },
+              'VR app': {
+                repository: 'pulse-home',
+                entity: 'VR app',
+                entityOptionId: 'e53b5660',
+              },
+              Autre: {
+                repository: '.github',
+                entity: 'Autre',
+                entityOptionId: '4d0938ce',
+              },
+            };
+
+            const repositoryProducts = {
+              'pulse-web-interface': 'Web',
+              'pulse-app-pilotage': 'Mobile app',
+              'pulse-desktop': 'Desktop',
+              'pulse-mdm-android-service': 'MDM Android',
+              'pulse-mdm-server': 'MDM Serveur',
+              'pulse-home': 'VR app',
+            };
+
+            const repositories = ['.github', ...Object.keys(repositoryProducts)];
+            const mode = process.env.RECONCILE_MODE;
+            const lookbackDays = Number.parseInt(process.env.LOOKBACK_DAYS, 10);
+
+            if (!['dry-run', 'execute'].includes(mode)) {
+              core.setFailed(`Mode invalide: ${mode}`);
+              return;
+            }
+            if (!Number.isInteger(lookbackDays) || lookbackDays < 1 || lookbackDays > 3650) {
+              core.setFailed(`lookback-days invalide: ${process.env.LOOKBACK_DAYS}`);
+              return;
+            }
+
+            function extractProduct(body) {
+              const match = (body || '').match(
+                /### Produit concerné\s*\r?\n+\s*([^\r\n]+)/i,
+              );
+              return match?.[1]?.trim();
+            }
+
+            async function loadProjectItems() {
+              const byContentId = new Map();
+              let after = null;
+
+              do {
+                const data = await github.graphql(
+                  `query($projectId: ID!, $after: String) {
+                    node(id: $projectId) {
+                      ... on ProjectV2 {
+                        items(first: 100, after: $after) {
+                          nodes {
+                            id
+                            content { ... on Issue { id } }
+                            fieldValues(first: 30) {
+                              nodes {
+                                ... on ProjectV2ItemFieldSingleSelectValue {
+                                  optionId
+                                  field {
+                                    ... on ProjectV2SingleSelectField { id }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                          pageInfo { hasNextPage endCursor }
+                        }
+                      }
+                    }
+                  }`,
+                  { projectId: PROJECT_ID, after },
+                );
+
+                const page = data.node?.items;
+                if (!page) throw new Error('Projet Pulse introuvable ou inaccessible.');
+                for (const item of page.nodes) {
+                  if (!item.content?.id) continue;
+                  byContentId.set(item.content.id, {
+                    id: item.id,
+                    values: new Map(
+                      item.fieldValues.nodes
+                        .filter((value) => value.field?.id && value.optionId)
+                        .map((value) => [value.field.id, value.optionId]),
+                    ),
+                  });
+                }
+                after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+              } while (after);
+
+              return byContentId;
+            }
+
+            async function addProjectItem(contentId) {
+              const result = await github.graphql(
+                `mutation($projectId: ID!, $contentId: ID!) {
+                  addProjectV2ItemById(input: {
+                    projectId: $projectId,
+                    contentId: $contentId
+                  }) {
+                    item { id }
+                  }
+                }`,
+                { projectId: PROJECT_ID, contentId },
+              );
+              return result.addProjectV2ItemById.item.id;
+            }
+
+            async function setSingleSelect(itemId, fieldId, optionId) {
+              await github.graphql(
+                `mutation(
+                  $projectId: ID!,
+                  $itemId: ID!,
+                  $fieldId: ID!,
+                  $optionId: String!
+                ) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId,
+                    itemId: $itemId,
+                    fieldId: $fieldId,
+                    value: { singleSelectOptionId: $optionId }
+                  }) {
+                    projectV2Item { id }
+                  }
+                }`,
+                { projectId: PROJECT_ID, itemId, fieldId, optionId },
+              );
+            }
+
+            async function transferIssue(issueId, destinationRepository) {
+              const destination = await github.graphql(
+                `query($owner: String!, $name: String!) {
+                  repository(owner: $owner, name: $name) { id }
+                }`,
+                { owner: ORG, name: destinationRepository },
+              );
+              if (!destination.repository?.id) {
+                throw new Error(`Repository cible introuvable: ${destinationRepository}`);
+              }
+
+              const result = await github.graphql(
+                `mutation($issueId: ID!, $repositoryId: ID!) {
+                  transferIssue(input: {
+                    issueId: $issueId,
+                    repositoryId: $repositoryId,
+                    createLabelsIfMissing: true
+                  }) {
+                    issue { id number url repository { name } }
+                  }
+                }`,
+                { issueId, repositoryId: destination.repository.id },
+              );
+              return result.transferIssue.issue;
+            }
+
+            const since = new Date(
+              Date.now() - lookbackDays * 24 * 60 * 60 * 1000,
+            ).toISOString();
+            let projectItems = await loadProjectItems();
+            const results = [];
+            const errors = [];
+
+            for (const repository of repositories) {
+              const issues = await github.paginate(github.rest.issues.listForRepo, {
+                owner: ORG,
+                repo: repository,
+                state: 'open',
+                since,
+                per_page: 100,
+              });
+
+              for (const sourceIssue of issues.filter((issue) => !issue.pull_request)) {
+                const declaredProduct = extractProduct(sourceIssue.body);
+                const product = declaredProduct || repositoryProducts[repository];
+                const route = routes[product];
+
+                if (!route) {
+                  results.push({
+                    result: 'Ignoré: produit absent ou inconnu',
+                    source: sourceIssue.html_url,
+                    destination: '',
+                    entity: '',
+                  });
+                  continue;
+                }
+
+                let issue = {
+                  nodeId: sourceIssue.node_id,
+                  url: sourceIssue.html_url,
+                  repository,
+                };
+                const existingItem = projectItems.get(issue.nodeId);
+                const needsTransfer = issue.repository !== route.repository;
+                const needsProject = !existingItem;
+                const needsEntity =
+                  existingItem?.values.get(ENTITY_FIELD_ID) !== route.entityOptionId;
+                const needsStatus =
+                  needsProject || !existingItem?.values.get(STATUS_FIELD_ID);
+
+                if (!needsTransfer && !needsProject && !needsEntity && !needsStatus) {
+                  continue;
+                }
+
+                if (mode === 'execute') {
+                  try {
+                    if (needsTransfer) {
+                      const transferred = await transferIssue(
+                        issue.nodeId,
+                        route.repository,
+                      );
+                      issue = {
+                        nodeId: transferred.id,
+                        url: transferred.url,
+                        repository: transferred.repository.name,
+                      };
+                      projectItems = await loadProjectItems();
+                    }
+
+                    let item = projectItems.get(issue.nodeId);
+                    let created = false;
+                    if (!item) {
+                      const itemId = await addProjectItem(issue.nodeId);
+                      item = { id: itemId, values: new Map() };
+                      projectItems.set(issue.nodeId, item);
+                      created = true;
+                    }
+
+                    if (created || !item.values.get(STATUS_FIELD_ID)) {
+                      await setSingleSelect(item.id, STATUS_FIELD_ID, QUALIFY_STATUS_ID);
+                    }
+                    if (item.values.get(ENTITY_FIELD_ID) !== route.entityOptionId) {
+                      await setSingleSelect(
+                        item.id,
+                        ENTITY_FIELD_ID,
+                        route.entityOptionId,
+                      );
+                    }
+                  } catch (error) {
+                    errors.push(`${sourceIssue.html_url}: ${error.message}`);
+                    core.error(`${sourceIssue.html_url}: ${error.stack || error.message}`);
+                    continue;
+                  }
+                }
+
+                results.push({
+                  result: mode === 'execute' ? 'Réconcilié' : 'Prévisualisation',
+                  source: sourceIssue.html_url,
+                  destination: `${ORG}/${route.repository}`,
+                  entity: route.entity,
+                });
+              }
+            }
+
+            core.summary
+              .addHeading(
+                mode === 'execute'
+                  ? 'Réconciliation des tickets Pulse'
+                  : 'Prévisualisation de la réconciliation',
+              )
+              .addRaw(
+                `Fenêtre analysée: **${lookbackDays} jour(s)**. ` +
+                `**${results.length}** résultat(s), **${errors.length}** erreur(s).\n\n`,
+              );
+
+            if (results.length) {
+              core.summary.addTable([
+                [
+                  { data: 'Résultat', header: true },
+                  { data: 'Source', header: true },
+                  { data: 'Destination', header: true },
+                  { data: 'Entity', header: true },
+                ],
+                ...results.slice(0, 100).map((result) => [
+                  result.result,
+                  result.source,
+                  result.destination,
+                  result.entity,
+                ]),
+              ]);
+            }
+            await core.summary.write();
+
+            if (errors.length) {
+              core.setFailed(`${errors.length} ticket(s) en erreur.`);
+            }
