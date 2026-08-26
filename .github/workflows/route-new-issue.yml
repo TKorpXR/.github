@@ -16,7 +16,7 @@ jobs:
       - name: Transfer issue and configure project fields
         uses: actions/github-script@v8
         with:
-          github-token: ${{ secrets.PROJECT_ROUTER_TOKEN || secrets.ORG_LABELS_TOKEN }}
+          github-token: ${{ secrets.PROJECT_ROUTER_TOKEN_V2 || secrets.PROJECT_ROUTER_TOKEN || secrets.ORG_LABELS_TOKEN }}
           script: |
             const ORG = 'TKorpXR';
             const PROJECT_ID = 'PVT_kwDOCnLJI84AkpBo';
