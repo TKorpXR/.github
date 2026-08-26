@@ -34,8 +34,8 @@ jobs:
       - name: Reconcile repository, project and fields
         uses: actions/github-script@v8
         env:
-          RECONCILE_MODE: ${{ github.event_name == 'schedule' && 'execute' || inputs.mode }}
-          LOOKBACK_DAYS: ${{ github.event_name == 'schedule' && '14' || inputs['lookback-days'] }}
+          RECONCILE_MODE: ${{ inputs.mode || 'execute' }}
+          LOOKBACK_DAYS: ${{ inputs['lookback-days'] || '14' }}
         with:
           github-token: ${{ secrets.PROJECT_ROUTER_TOKEN }}
           script: |
