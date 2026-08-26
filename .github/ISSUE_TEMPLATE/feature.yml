@@ -2,6 +2,7 @@
 name: "🚀 Feature"
 description: Proposer une nouvelle fonctionnalité ou une amélioration
 type: Feature
+projects: ["TKorpXR/1"]
 body:
   - type: dropdown
     id: product
