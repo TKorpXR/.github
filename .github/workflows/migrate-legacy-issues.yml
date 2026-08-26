@@ -57,7 +57,7 @@ jobs:
           MAX_ISSUES: ${{ inputs['max-issues'] }}
           TRANSFER_CONFIRMATION: ${{ inputs.confirmation }}
         with:
-          github-token: ${{ secrets.PROJECT_ROUTER_TOKEN || secrets.ORG_LABELS_TOKEN }}
+          github-token: ${{ secrets.PROJECT_ROUTER_TOKEN_V2 || secrets.PROJECT_ROUTER_TOKEN || secrets.ORG_LABELS_TOKEN }}
           script: |
             const ORG = 'TKorpXR';
             const SOURCE_REPOSITORY = '.github';

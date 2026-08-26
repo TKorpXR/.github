@@ -37,7 +37,7 @@ jobs:
           RECONCILE_MODE: ${{ inputs.mode || 'execute' }}
           LOOKBACK_DAYS: ${{ inputs['lookback-days'] || '14' }}
         with:
-          github-token: ${{ secrets.PROJECT_ROUTER_TOKEN }}
+          github-token: ${{ secrets.PROJECT_ROUTER_TOKEN_V2 || secrets.PROJECT_ROUTER_TOKEN }}
           script: |
             const ORG = 'TKorpXR';
             const PROJECT_ID = 'PVT_kwDOCnLJI84AkpBo';
