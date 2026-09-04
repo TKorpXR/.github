@@ -1,0 +1,395 @@
+name: Sync Pulse project status
+
+# Fait avancer la colonne Status du projet Pulse au rythme du code :
+#   branche `type/issue-<N>-slug`  ->  En cours
+#   PR ouverte (hors brouillon)    ->  A fusionner
+#   PR fusionnee                   ->  To build/To push
+#
+# Le balayage est centralise ici parce que le jeton projet n'existe que dans ce
+# depot : `create` et `pull_request` sont des evenements locaux a chaque depot
+# et ne peuvent pas declencher un workflow ici.
+#
+# Ce workflow ne fait qu'avancer. Il n'ajoute jamais un ticket au projet et ne
+# pose jamais un statut initial : `route-new-issue` et `reconcile-pulse-issues`
+# gardent cette responsabilite, et `reconcile` ne pose le Status que s'il est
+# absent — les deux ne se marchent donc pas dessus.
+
+on:
+  schedule:
+    # Decale de 5 minutes par rapport a `reconcile-pulse-issues` (7,22,37,52)
+    # pour ne pas ecrire dans le projet en meme temps que lui.
+    - cron: "2,17,32,47 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Dry-run affiche le plan sans modifier les tickets"
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - execute
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-project-status
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Move tickets along branch, pull request and merge signals
+        uses: actions/github-script@v8
+        env:
+          SYNC_MODE: ${{ inputs.mode || 'execute' }}
+        with:
+          github-token: ${{ secrets.PROJECT_ROUTER_TOKEN_V2 || secrets.PROJECT_ROUTER_TOKEN }}
+          script: |
+            const ORG = 'TKorpXR';
+            const PROJECT_ID = 'PVT_kwDOCnLJI84AkpBo';
+            const STATUS_FIELD_ID = 'PVTSSF_lADOCnLJI84AkpBozgc0WBA';
+
+            // Rang croissant : le balayage ne deplace un ticket que vers un rang
+            // strictement superieur. Un statut hors de ce trio vaut 0 et
+            // n'oppose donc aucune resistance.
+            const STATUSES = [
+              { key: 'en-cours', rank: 1, optionId: '47fc9ee4', label: 'En cours' },
+              { key: 'a-fusionner', rank: 2, optionId: '98236657', label: 'A fusionner' },
+              { key: 'to-build', rank: 3, optionId: '8f26b0c8', label: 'To build/To push' },
+            ];
+            const RANK_BY_OPTION = new Map(STATUSES.map((s) => [s.optionId, s.rank]));
+            const STATUS_BY_RANK = new Map(STATUSES.map((s) => [s.rank, s]));
+
+            // Mise en service : rien d'anterieur n'est repris, pour ne pas
+            // deplacer en masse des tickets dont la branche dort depuis des mois.
+            const START_AT = Date.parse('2026-09-04T20:00:00Z');
+
+            const REPOSITORIES = [
+              'pulse-web-interface',
+              'pulse-app-pilotage',
+              'pulse-desktop',
+              'pulse-mdm-android-service',
+              'pulse-mdm-server',
+              'pulse-home',
+            ];
+
+            const mode = process.env.SYNC_MODE;
+            if (!['dry-run', 'execute'].includes(mode)) {
+              core.setFailed(`Mode invalide: ${mode}`);
+              return;
+            }
+
+            // Le prefixe litteral `issue-` est exige. Sans lui,
+            // `fix/3173-current-content-freshness` (pulse-mdm-server #73, qui
+            // reference un ticket pulse-web-interface) serait lu comme l'issue
+            // 3173 du depot ou vit la branche.
+            function issueFromBranch(branch) {
+              const match = /(?:^|\/)issue[-_]?(\d+)/i.exec(branch || '');
+              return match ? Number(match[1]) : null;
+            }
+
+            const key = (repository, number) => `${repository}#${number}`;
+
+            /** Retient le rang le plus avance vu pour un ticket. */
+            const wanted = new Map();
+            function want(repository, number, rank, reason) {
+              const id = key(repository, number);
+              const current = wanted.get(id);
+              if (current && current.rank >= rank) return;
+              wanted.set(id, { repository, number, rank, reason });
+            }
+
+            async function scanRepository(repository) {
+              // Les branches sont le signal primaire : aucune issue Pulse n'a de
+              // `linkedBranches`, le bouton "Create a branch" n'etant pas utilise.
+              let after = null;
+              do {
+                const data = await github.graphql(
+                  `query($owner: String!, $name: String!, $after: String) {
+                    repository(owner: $owner, name: $name) {
+                      refs(
+                        refPrefix: "refs/heads/"
+                        first: 100
+                        after: $after
+                        orderBy: { field: ALPHABETICAL, direction: ASC }
+                      ) {
+                        nodes {
+                          name
+                          target { ... on Commit { committedDate } }
+                        }
+                        pageInfo { hasNextPage endCursor }
+                      }
+                    }
+                  }`,
+                  { owner: ORG, name: repository, after },
+                );
+
+                const refs = data.repository?.refs;
+                if (!refs) throw new Error(`Depot inaccessible: ${repository}`);
+
+                for (const ref of refs.nodes) {
+                  const number = issueFromBranch(ref.name);
+                  if (!number) continue;
+                  // Faute de date de creation de branche, la date du dernier
+                  // commit sert de reference : une branche endormie avant la mise
+                  // en service reste ignoree.
+                  const touchedAt = Date.parse(ref.target?.committedDate ?? '');
+                  if (!Number.isFinite(touchedAt) || touchedAt < START_AT) continue;
+                  want(repository, number, 1, `branche ${ref.name}`);
+                }
+
+                after = refs.pageInfo.hasNextPage ? refs.pageInfo.endCursor : null;
+              } while (after);
+
+              // `closingIssuesReferences` complete le nom de branche sans le
+              // remplacer : il est incomplet en pratique (pulse-mdm-server #77
+              // n'en portait aucune) mais rattrape les branches hors convention.
+              const prs = await github.graphql(
+                `query($owner: String!, $name: String!) {
+                  repository(owner: $owner, name: $name) {
+                    open: pullRequests(
+                      states: OPEN
+                      first: 100
+                      orderBy: { field: UPDATED_AT, direction: DESC }
+                    ) {
+                      nodes {
+                        number
+                        isDraft
+                        createdAt
+                        headRefName
+                        closingIssuesReferences(first: 10) {
+                          nodes { number repository { name } }
+                        }
+                      }
+                    }
+                    merged: pullRequests(
+                      states: MERGED
+                      first: 50
+                      orderBy: { field: UPDATED_AT, direction: DESC }
+                    ) {
+                      nodes {
+                        number
+                        mergedAt
+                        headRefName
+                        closingIssuesReferences(first: 10) {
+                          nodes { number repository { name } }
+                        }
+                      }
+                    }
+                  }
+                }`,
+                { owner: ORG, name: repository },
+              );
+
+              const linked = (pullRequest) => {
+                const targets = new Map();
+                const fromBranch = issueFromBranch(pullRequest.headRefName);
+                if (fromBranch) targets.set(key(repository, fromBranch), {
+                  repository,
+                  number: fromBranch,
+                });
+                for (const issue of pullRequest.closingIssuesReferences.nodes) {
+                  targets.set(key(issue.repository.name, issue.number), {
+                    repository: issue.repository.name,
+                    number: issue.number,
+                  });
+                }
+                return [...targets.values()];
+              };
+
+              for (const pullRequest of prs.repository.open.nodes) {
+                // Un brouillon n'est pas pret a fusionner : il ne vaut que par sa
+                // branche, deja comptee ci-dessus.
+                if (pullRequest.isDraft) continue;
+                if (Date.parse(pullRequest.createdAt) < START_AT) continue;
+                for (const target of linked(pullRequest)) {
+                  want(
+                    target.repository,
+                    target.number,
+                    2,
+                    `${repository}#${pullRequest.number} ouverte`,
+                  );
+                }
+              }
+
+              for (const pullRequest of prs.repository.merged.nodes) {
+                if (Date.parse(pullRequest.mergedAt) < START_AT) continue;
+                for (const target of linked(pullRequest)) {
+                  want(
+                    target.repository,
+                    target.number,
+                    3,
+                    `${repository}#${pullRequest.number} fusionnee`,
+                  );
+                }
+              }
+            }
+
+            /** Items du projet, indexes par `depot#numero`. */
+            async function loadProjectItems() {
+              const byIssue = new Map();
+              let after = null;
+
+              do {
+                const data = await github.graphql(
+                  `query($projectId: ID!, $after: String) {
+                    node(id: $projectId) {
+                      ... on ProjectV2 {
+                        items(first: 100, after: $after) {
+                          nodes {
+                            id
+                            content {
+                              ... on Issue {
+                                number
+                                repository { name }
+                              }
+                            }
+                            fieldValues(first: 30) {
+                              nodes {
+                                ... on ProjectV2ItemFieldSingleSelectValue {
+                                  optionId
+                                  name
+                                  field {
+                                    ... on ProjectV2SingleSelectField { id }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                          pageInfo { hasNextPage endCursor }
+                        }
+                      }
+                    }
+                  }`,
+                  { projectId: PROJECT_ID, after },
+                );
+
+                const page = data.node?.items;
+                if (!page) throw new Error('Projet Pulse introuvable ou inaccessible.');
+
+                for (const item of page.nodes) {
+                  const content = item.content;
+                  if (!content?.number || !content.repository?.name) continue;
+                  const status = item.fieldValues.nodes.find(
+                    (value) => value.field?.id === STATUS_FIELD_ID,
+                  );
+                  byIssue.set(key(content.repository.name, content.number), {
+                    id: item.id,
+                    optionId: status?.optionId ?? null,
+                    label: status?.name ?? null,
+                  });
+                }
+
+                after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+              } while (after);
+
+              return byIssue;
+            }
+
+            async function setStatus(itemId, optionId) {
+              await github.graphql(
+                `mutation(
+                  $projectId: ID!,
+                  $itemId: ID!,
+                  $fieldId: ID!,
+                  $optionId: String!
+                ) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId,
+                    itemId: $itemId,
+                    fieldId: $fieldId,
+                    value: { singleSelectOptionId: $optionId }
+                  }) {
+                    projectV2Item { id }
+                  }
+                }`,
+                { projectId: PROJECT_ID, itemId, fieldId: STATUS_FIELD_ID, optionId },
+              );
+            }
+
+            const errors = [];
+            for (const repository of REPOSITORIES) {
+              try {
+                await scanRepository(repository);
+              } catch (error) {
+                errors.push(`${repository}: ${error.message}`);
+                core.error(`${repository}: ${error.stack || error.message}`);
+              }
+            }
+
+            const projectItems = await loadProjectItems();
+            const moves = [];
+            let absent = 0;
+
+            for (const target of wanted.values()) {
+              const item = projectItems.get(key(target.repository, target.number));
+              if (!item) {
+                // `route-new-issue` et `reconcile-pulse-issues` sont seuls
+                // responsables de l'ajout au projet : le ticket sera pris au
+                // prochain passage.
+                absent += 1;
+                continue;
+              }
+
+              const currentRank = RANK_BY_OPTION.get(item.optionId) ?? 0;
+              if (currentRank >= target.rank) continue;
+
+              const status = STATUS_BY_RANK.get(target.rank);
+              if (mode === 'execute') {
+                try {
+                  await setStatus(item.id, status.optionId);
+                } catch (error) {
+                  errors.push(
+                    `${target.repository}#${target.number}: ${error.message}`,
+                  );
+                  core.error(
+                    `${target.repository}#${target.number}: ${error.stack || error.message}`,
+                  );
+                  continue;
+                }
+              }
+
+              moves.push({
+                issue: `${target.repository}#${target.number}`,
+                from: item.label ?? 'sans statut',
+                to: status.label,
+                reason: target.reason,
+              });
+            }
+
+            core.summary
+              .addHeading(
+                mode === 'execute'
+                  ? 'Statuts synchronises avec le code'
+                  : 'Previsualisation de la synchronisation',
+              )
+              .addRaw(
+                `**${moves.length}** deplacement(s), ` +
+                `**${absent}** ticket(s) hors projet ignore(s), ` +
+                `**${errors.length}** erreur(s).\n\n`,
+              );
+
+            if (moves.length) {
+              core.summary.addTable([
+                [
+                  { data: 'Ticket', header: true },
+                  { data: 'De', header: true },
+                  { data: 'Vers', header: true },
+                  { data: 'Signal', header: true },
+                ],
+                ...moves.slice(0, 100).map((move) => [
+                  move.issue,
+                  move.from,
+                  move.to,
+                  move.reason,
+                ]),
+              ]);
+            }
+            await core.summary.write();
+
+            if (errors.length) {
+              core.setFailed(`${errors.length} erreur(s) pendant la synchronisation.`);
+            }
