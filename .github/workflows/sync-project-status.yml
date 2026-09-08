@@ -13,6 +13,11 @@ name: Sync Pulse project status
 # pose jamais un statut initial : `route-new-issue` et `reconcile-pulse-issues`
 # gardent cette responsabilite, et `reconcile` ne pose le Status que s'il est
 # absent — les deux ne se marchent donc pas dessus.
+#
+# « Avancer » se lit sur l'echelle complete du tableau, statuts de recette
+# compris : un ticket deja passe en `A tester`, `Test OK` ou `Termine` n'est
+# jamais ramene en arriere. Les mises en attente (`Suspendu`,
+# `Version ulterieure`) sont hors echelle et ne sont jamais ecrasees.
 
 on:
   schedule:
@@ -52,16 +57,45 @@ jobs:
             const PROJECT_ID = 'PVT_kwDOCnLJI84AkpBo';
             const STATUS_FIELD_ID = 'PVTSSF_lADOCnLJI84AkpBozgc0WBA';
 
-            // Rang croissant : le balayage ne deplace un ticket que vers un rang
-            // strictement superieur. Un statut hors de ce trio vaut 0 et
-            // n'oppose donc aucune resistance.
-            const STATUSES = [
-              { key: 'en-cours', rank: 1, optionId: '47fc9ee4', label: 'En cours' },
-              { key: 'a-fusionner', rank: 2, optionId: '98236657', label: 'A fusionner' },
-              { key: 'to-build', rank: 3, optionId: '8f26b0c8', label: 'To build/To push' },
+            // Echelle complete du tableau, dans l'ordre. Le balayage ne deplace
+            // un ticket que vers un rang strictement superieur : un statut situe
+            // en aval de la cible resiste donc de lui-meme.
+            //
+            // Les trois statuts qui suivent `To build/To push` etaient absents
+            // de cette liste et valaient donc 0, comme les statuts amont. Une PR
+            // fusionnee ramenait ainsi en `To build/To push`, tous les quarts
+            // d'heure, un ticket passe en `A tester`, `Test OK` ou `Termine` —
+            // jusqu'a ce que la PR sorte de la fenetre de balayage. Les y
+            // remettre suffit a rendre l'avancee manuelle definitive.
+            const LADDER = [
+              { optionId: '443ad84f', label: 'Retour Clo / a classifer' },
+              { optionId: 'f75ad846', label: 'A faire' },
+              { optionId: '47fc9ee4', label: 'En cours' },
+              { optionId: '98236657', label: 'A fusionner' },
+              { optionId: '8f26b0c8', label: 'To build/To push' },
+              { optionId: 'e7841e11', label: 'A tester' },
+              { optionId: 'b06935b3', label: 'Test OK' },
+              { optionId: 'd6a4195b', label: 'Termine' },
             ];
-            const RANK_BY_OPTION = new Map(STATUSES.map((s) => [s.optionId, s.rank]));
-            const STATUS_BY_RANK = new Map(STATUSES.map((s) => [s.rank, s]));
+            const RANK_BY_OPTION = new Map(
+              LADDER.map((status, index) => [status.optionId, index + 1]),
+            );
+            const STATUS_BY_OPTION = new Map(
+              LADDER.map((status) => [status.optionId, status]),
+            );
+
+            // Statuts vises par le balayage, selon le signal observe.
+            const EN_COURS = '47fc9ee4';
+            const A_FUSIONNER = '98236657';
+            const TO_BUILD = '8f26b0c8';
+
+            // Mises en attente : ce sont des decisions humaines explicites, hors
+            // echelle. Aucun signal de code ne doit les ecraser — un ticket
+            // suspendu dont une branche bouge encore doit rester suspendu.
+            const HOLD_OPTION_IDS = new Set([
+              'aed015ee', // Suspendu
+              '04ee2d3b', // Version ulterieure
+            ]);
 
             // Mise en service : rien d'anterieur n'est repris, pour ne pas
             // deplacer en masse des tickets dont la branche dort depuis des mois.
@@ -95,11 +129,12 @@ jobs:
 
             /** Retient le rang le plus avance vu pour un ticket. */
             const wanted = new Map();
-            function want(repository, number, rank, reason) {
+            function want(repository, number, optionId, reason) {
+              const rank = RANK_BY_OPTION.get(optionId);
               const id = key(repository, number);
               const current = wanted.get(id);
               if (current && current.rank >= rank) return;
-              wanted.set(id, { repository, number, rank, reason });
+              wanted.set(id, { repository, number, optionId, rank, reason });
             }
 
             async function scanRepository(repository) {
@@ -138,7 +173,7 @@ jobs:
                   // en service reste ignoree.
                   const touchedAt = Date.parse(ref.target?.committedDate ?? '');
                   if (!Number.isFinite(touchedAt) || touchedAt < START_AT) continue;
-                  want(repository, number, 1, `branche ${ref.name}`);
+                  want(repository, number, EN_COURS, `branche ${ref.name}`);
                 }
 
                 after = refs.pageInfo.hasNextPage ? refs.pageInfo.endCursor : null;
@@ -209,7 +244,7 @@ jobs:
                   want(
                     target.repository,
                     target.number,
-                    2,
+                    A_FUSIONNER,
                     `${repository}#${pullRequest.number} ouverte`,
                   );
                 }
@@ -221,7 +256,7 @@ jobs:
                   want(
                     target.repository,
                     target.number,
-                    3,
+                    TO_BUILD,
                     `${repository}#${pullRequest.number} fusionnee`,
                   );
                 }
@@ -323,6 +358,7 @@ jobs:
             const projectItems = await loadProjectItems();
             const moves = [];
             let absent = 0;
+            let held = 0;
 
             for (const target of wanted.values()) {
               const item = projectItems.get(key(target.repository, target.number));
@@ -334,10 +370,17 @@ jobs:
                 continue;
               }
 
+              if (HOLD_OPTION_IDS.has(item.optionId)) {
+                held += 1;
+                continue;
+              }
+
+              // Un statut hors echelle et hors attente vaut 0 : le ticket est
+              // alors pris en charge comme s'il n'avait pas de statut.
               const currentRank = RANK_BY_OPTION.get(item.optionId) ?? 0;
               if (currentRank >= target.rank) continue;
 
-              const status = STATUS_BY_RANK.get(target.rank);
+              const status = STATUS_BY_OPTION.get(target.optionId);
               if (mode === 'execute') {
                 try {
                   await setStatus(item.id, status.optionId);
@@ -369,6 +412,7 @@ jobs:
               .addRaw(
                 `**${moves.length}** deplacement(s), ` +
                 `**${absent}** ticket(s) hors projet ignore(s), ` +
+                `**${held}** en attente respectee(s), ` +
                 `**${errors.length}** erreur(s).\n\n`,
               );
 
