@@ -58,6 +58,7 @@ jobs:
           TRANSFER_CONFIRMATION: ${{ inputs.confirmation }}
         with:
           github-token: ${{ secrets.PROJECT_ROUTER_TOKEN_V2 || secrets.PROJECT_ROUTER_TOKEN || secrets.ORG_LABELS_TOKEN }}
+          retries: 3
           script: |
             const ORG = 'TKorpXR';
             const SOURCE_REPOSITORY = '.github';

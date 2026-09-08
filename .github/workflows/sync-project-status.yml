@@ -52,6 +52,7 @@ jobs:
           SYNC_MODE: ${{ inputs.mode || 'execute' }}
         with:
           github-token: ${{ secrets.PROJECT_ROUTER_TOKEN_V2 || secrets.PROJECT_ROUTER_TOKEN }}
+          retries: 3
           script: |
             const ORG = 'TKorpXR';
             const PROJECT_ID = 'PVT_kwDOCnLJI84AkpBo';
