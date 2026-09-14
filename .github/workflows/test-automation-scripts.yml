@@ -1,0 +1,56 @@
+name: Test automation scripts
+
+# Filet des workflows d'automatisation du Project Pulse : ils ecrivent toutes
+# les 15 minutes sur des tickets reels, une regression doit donc etre arretee
+# avant la fusion plutot que decouverte sur le tableau.
+#
+#   test        : `npm test`, logique des scripts contre des doublures d'API.
+#   actionlint  : syntaxe et expressions des workflows couverts par les tests.
+#
+# `actionlint` ne vise pas encore tout le dossier : `sync-org-labels.yml` est
+# vide sur `main`, et les workflows a scripts shell n'ont jamais ete passes a
+# shellcheck. Les lister ici au fur et a mesure qu'ils sont remis en regle.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-automation-scripts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      - name: Run tests
+        run: npm test
+
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint workflows
+        uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: >-
+            -color
+            .github/workflows/reconcile-pulse-issues.yml
+            .github/workflows/sync-project-status.yml
+            .github/workflows/test-automation-scripts.yml
