@@ -212,11 +212,11 @@ async function run({ github, core, env = process.env, now = Date.now() }) {
     return undefined;
   }
 
-  return runWithRateLimitGuard({ core, workflow: 'reconcile-pulse-issues' }, async () => {
+  const errors = [];
+  async function execute() {
     const since = new Date(now - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
     let projectItems = await loadProjectItems(github);
     const results = [];
-    const errors = [];
 
     for (const repository of REPOSITORIES) {
       // Seuls les tickets ouverts sont reconcilies : un ticket ferme, ou
@@ -340,7 +340,17 @@ async function run({ github, core, env = process.env, now = Date.now() }) {
       core.setFailed(`${errors.length} ticket(s) en erreur.`);
     }
     return { results, errors };
-  });
+  }
+
+  return runWithRateLimitGuard(
+    {
+      core,
+      workflow: 'reconcile-pulse-issues',
+      getFailureMessage: () =>
+        errors.length ? `${errors.length} ticket(s) en erreur.` : null,
+    },
+    execute,
+  );
 }
 
 module.exports = run;

@@ -41,7 +41,10 @@ function isRateLimitError(error) {
  *
  * Toute autre erreur est relancee telle quelle.
  */
-async function runWithRateLimitGuard({ core, workflow }, run) {
+async function runWithRateLimitGuard(
+  { core, workflow, getFailureMessage = () => null },
+  run,
+) {
   try {
     return await run();
   } catch (error) {
@@ -51,13 +54,18 @@ async function runWithRateLimitGuard({ core, workflow }, run) {
       `${workflow} : limite de debit GitHub atteinte, passage interrompu. ` +
         `Le prochain declenchement refera le balayage complet. (${error.message})`,
     );
+    const failureMessage = getFailureMessage();
     await core.summary
       .addHeading('Passage interrompu : limite de debit GitHub')
       .addRaw(
-        'Le jeton du projet a epuise son quota. Rien a corriger : le workflow ' +
-          'est idempotent et le prochain passage refera le balayage complet.\n',
+        failureMessage
+          ? 'Le jeton du projet a epuise son quota, mais le passage avait deja ' +
+              'rencontre une ou plusieurs erreurs. Le run reste donc en echec.\n'
+          : 'Le jeton du projet a epuise son quota. Rien a corriger : le workflow ' +
+              'est idempotent et le prochain passage refera le balayage complet.\n',
       )
       .write();
+    if (failureMessage) core.setFailed(failureMessage);
     return { rateLimited: true };
   }
 }

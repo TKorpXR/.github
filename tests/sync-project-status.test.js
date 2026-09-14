@@ -296,6 +296,28 @@ test('une limite pendant le balayage interrompt le passage sans tenter les depot
   assert.equal(core.calls.failed.length, 0);
 });
 
+test('une limite ne masque pas une vraie panne de depot deja rencontree', async () => {
+  const github = createGithub({
+    graphql: [
+      [
+        'refs(',
+        ({ name }) => {
+          if (name === 'pulse-web-interface') throw new Error('Depot inaccessible');
+          throw graphqlRateLimitError();
+        },
+      ],
+    ],
+  });
+  const core = createCore();
+
+  const result = await sync({ github, core, env: { SYNC_MODE: 'execute' } });
+
+  assert.deepEqual(result, { rateLimited: true });
+  assert.equal(github.calls.graphql.length, 2);
+  assert.deepEqual(core.calls.failed, ['1 erreur(s) pendant la synchronisation.']);
+  assert.equal(core.calls.warnings.length, 1);
+});
+
 test('une limite pendant les ecritures arrete les ecritures suivantes', async () => {
   let attempts = 0;
   const github = fakeGithub({

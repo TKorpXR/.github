@@ -349,9 +349,9 @@ async function run({ github, core, env = process.env }) {
     return undefined;
   }
 
-  return runWithRateLimitGuard({ core, workflow: 'sync-project-status' }, async () => {
+  const errors = [];
+  async function execute() {
     const { wanted, want } = createWantedTracker();
-    const errors = [];
 
     for (const repository of REPOSITORIES) {
       try {
@@ -418,7 +418,17 @@ async function run({ github, core, env = process.env }) {
       core.setFailed(`${errors.length} erreur(s) pendant la synchronisation.`);
     }
     return { moves, errors, absent: plan.absent, held: plan.held };
-  });
+  }
+
+  return runWithRateLimitGuard(
+    {
+      core,
+      workflow: 'sync-project-status',
+      getFailureMessage: () =>
+        errors.length ? `${errors.length} erreur(s) pendant la synchronisation.` : null,
+    },
+    execute,
+  );
 }
 
 module.exports = run;

@@ -295,6 +295,31 @@ test('une limite sur un ticket arrete le passage au lieu de faire echouer chaque
   assert.equal(core.calls.failed.length, 0);
 });
 
+test('une limite ne masque pas une vraie erreur deja rencontree', async () => {
+  let attempts = 0;
+  const github = fakeGithub({
+    issuesByRepo: { 'pulse-web-interface': [issue(1), issue(2)] },
+    onMutation: () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('Could not resolve to a node');
+      throw graphqlRateLimitError();
+    },
+  });
+  const core = createCore();
+
+  const result = await reconcile({
+    github,
+    core,
+    env: { RECONCILE_MODE: 'execute', LOOKBACK_DAYS: '14' },
+    now: NOW,
+  });
+
+  assert.deepEqual(result, { rateLimited: true });
+  assert.equal(attempts, 2);
+  assert.deepEqual(core.calls.failed, ['1 ticket(s) en erreur.']);
+  assert.equal(core.calls.warnings.length, 1);
+});
+
 test("une vraie erreur sur un ticket reste un echec, sans bloquer les tickets suivants", async () => {
   const touched = [];
   const github = fakeGithub({
