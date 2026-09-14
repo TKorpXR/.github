@@ -1,0 +1,12 @@
+{
+  "name": "tkorpxr-github-automation",
+  "private": true,
+  "description": "Scripts et tests des workflows d'automatisation du Project Pulse.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
