@@ -37,7 +37,10 @@ function isRateLimitError(error) {
  *
  * Les deux workflows couverts sont idempotents : un passage interrompu n'a rien
  * a rattraper, le suivant refait le balayage complet. Le run se termine donc en
- * succes, avec un avertissement visible dans l'onglet Actions et le resume.
+ * succes, avec un avertissement visible dans l'onglet Actions et le resume —
+ * sauf si le passage avait deja releve de vraies erreurs avant la limite :
+ * `getFailureMessage` renvoie alors le message d'echec, et le run reste en
+ * echec pour que la limite ne masque pas ces erreurs.
  *
  * Toute autre erreur est relancee telle quelle.
  */

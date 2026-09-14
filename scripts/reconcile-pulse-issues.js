@@ -336,19 +336,18 @@ async function run({ github, core, env = process.env, now = Date.now() }) {
     }
     await core.summary.write();
 
-    if (errors.length) {
-      core.setFailed(`${errors.length} ticket(s) en erreur.`);
-    }
+    const message = failureMessage();
+    if (message) core.setFailed(message);
     return { results, errors };
   }
 
+  // Seule source du message d'echec : fin normale du passage, ou passage
+  // interrompu par une limite de debit apres de vraies erreurs.
+  const failureMessage = () =>
+    errors.length ? `${errors.length} ticket(s) en erreur.` : null;
+
   return runWithRateLimitGuard(
-    {
-      core,
-      workflow: 'reconcile-pulse-issues',
-      getFailureMessage: () =>
-        errors.length ? `${errors.length} ticket(s) en erreur.` : null,
-    },
+    { core, workflow: 'reconcile-pulse-issues', getFailureMessage: failureMessage },
     execute,
   );
 }

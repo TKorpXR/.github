@@ -52,10 +52,16 @@ est partagé avec tous ses autres usages. Une opération de masse faite à la ma
 suffit à l'épuiser quelques minutes.
 
 Quand GitHub renvoie une limite de débit, `reconcile-pulse-issues` et
-`sync-project-status` **interrompent le passage avec un avertissement, sans
-faire échouer le run**. Les deux sont idempotents : le passage suivant refait le
-balayage complet, il n'y a rien à rattraper. Toute autre erreur continue de
-faire échouer le run.
+`sync-project-status` **interrompent le passage avec un avertissement**. Les deux
+sont idempotents : le passage suivant refait le balayage complet, il n'y a rien à
+rattraper.
+
+Le run ne passe pas pour autant en succès dans tous les cas :
+
+- limite de débit seule : **succès**, avec l'avertissement ;
+- limite de débit après une vraie erreur dans le même passage : **échec**, pour
+  que l'erreur ne soit pas masquée par la limite ;
+- toute autre erreur : **échec**, comme avant.
 
 Un avertissement « limite de débit » qui revient à chaque passage n'est plus un
 incident passager : il faut alors regarder qui consomme le quota du compte.

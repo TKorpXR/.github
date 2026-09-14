@@ -5,8 +5,9 @@ name: Reconcile Pulse issues
 #
 # La logique vit dans `scripts/reconcile-pulse-issues.js`, testee par
 # `tests/reconcile-pulse-issues.test.js` (`npm test`). Une limite de debit
-# GitHub interrompt le passage avec un avertissement, sans faire echouer le
-# run : la reconciliation est idempotente et le passage suivant la refait.
+# GitHub interrompt le passage avec un avertissement : la reconciliation est
+# idempotente et le passage suivant la refait. Le run ne reste en echec que si
+# une vraie erreur a ete rencontree avant la limite.
 
 on:
   schedule:

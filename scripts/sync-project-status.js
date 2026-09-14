@@ -414,19 +414,18 @@ async function run({ github, core, env = process.env }) {
     }
     await core.summary.write();
 
-    if (errors.length) {
-      core.setFailed(`${errors.length} erreur(s) pendant la synchronisation.`);
-    }
+    const message = failureMessage();
+    if (message) core.setFailed(message);
     return { moves, errors, absent: plan.absent, held: plan.held };
   }
 
+  // Seule source du message d'echec : fin normale du passage, ou passage
+  // interrompu par une limite de debit apres de vraies erreurs.
+  const failureMessage = () =>
+    errors.length ? `${errors.length} erreur(s) pendant la synchronisation.` : null;
+
   return runWithRateLimitGuard(
-    {
-      core,
-      workflow: 'sync-project-status',
-      getFailureMessage: () =>
-        errors.length ? `${errors.length} erreur(s) pendant la synchronisation.` : null,
-    },
+    { core, workflow: 'sync-project-status', getFailureMessage: failureMessage },
     execute,
   );
 }

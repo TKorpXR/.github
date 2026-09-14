@@ -21,8 +21,9 @@ name: Sync Pulse project status
 #
 # La logique vit dans `scripts/sync-project-status.js`, testee par
 # `tests/sync-project-status.test.js` (`npm test`). Une limite de debit GitHub
-# interrompt le passage avec un avertissement, sans faire echouer le run : le
-# balayage est idempotent et le passage suivant le refait en entier.
+# interrompt le passage avec un avertissement : le balayage est idempotent et
+# le passage suivant le refait en entier. Le run ne reste en echec que si une
+# vraie erreur a ete rencontree avant la limite.
 
 on:
   schedule:
