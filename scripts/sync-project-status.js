@@ -38,6 +38,11 @@ const EN_COURS = '47fc9ee4';
 const A_FUSIONNER = '98236657';
 const TO_BUILD = '8f26b0c8';
 
+// Label appose lors d'un echec en recette : un ticket portant ce label
+// et recule en amont ne doit pas etre ramene vers To build/To push par
+// une ancienne PR fusionnee.
+const REJECTED_LABEL = '😩 Toujours pas bon';
+
 // Mises en attente : ce sont des decisions humaines explicites, hors
 // echelle. Aucun signal de code ne doit les ecraser — un ticket
 // suspendu dont une branche bouge encore doit rester suspendu.
@@ -70,15 +75,32 @@ function issueFromBranch(branch) {
 
 const key = (repository, number) => `${repository}#${number}`;
 
-/** Retient le rang le plus avance vu pour chaque ticket. */
+/** Retient le rang le plus avance vu pour chaque ticket tout en gardant l'ensemble des signaux. */
 function createWantedTracker() {
   const wanted = new Map();
   function want(repository, number, optionId, reason) {
     const rank = RANK_BY_OPTION.get(optionId);
     const id = key(repository, number);
-    const current = wanted.get(id);
-    if (current && current.rank >= rank) return;
-    wanted.set(id, { repository, number, optionId, rank, reason });
+    let entry = wanted.get(id);
+    if (!entry) {
+      entry = {
+        repository,
+        number,
+        optionId,
+        rank,
+        reason,
+        signals: new Map(),
+      };
+      wanted.set(id, entry);
+    }
+    if (!entry.signals.has(optionId)) {
+      entry.signals.set(optionId, { repository, number, optionId, rank, reason });
+    }
+    if (rank > entry.rank) {
+      entry.optionId = optionId;
+      entry.rank = rank;
+      entry.reason = reason;
+    }
   }
   return { wanted, want };
 }
@@ -152,8 +174,8 @@ function planMoves(wanted, projectItems) {
   let absent = 0;
   let held = 0;
 
-  for (const target of wanted.values()) {
-    const item = projectItems.get(key(target.repository, target.number));
+  for (const entry of wanted.values()) {
+    const item = projectItems.get(key(entry.repository, entry.number));
     if (!item) {
       // `route-new-issue` et `reconcile-pulse-issues` sont seuls
       // responsables de l'ajout au projet : le ticket sera pris au
@@ -167,9 +189,37 @@ function planMoves(wanted, projectItems) {
       continue;
     }
 
+    const currentRank = RANK_BY_OPTION.get(item.optionId) ?? 0;
+    const isRejected = item.labels?.has(REJECTED_LABEL);
+
+    // Un ticket renvoye en amont avec le label « Toujours pas bon »
+    // ne doit pas etre ramene en `To build/To push` par une ancienne PR
+    // deja fusionnee. On neutralise le signal `TO_BUILD` pour ce ticket
+    // et on retient le meilleur signal amont s'il existe (ex. branche
+    // active pour `En cours`, nouvelle PR ouverte pour `A fusionner`).
+    let target = entry;
+    if (isRejected && currentRank < RANK_BY_OPTION.get(TO_BUILD)) {
+      let bestUpstream = null;
+      if (entry.signals) {
+        for (const signal of entry.signals.values()) {
+          if (signal.optionId === TO_BUILD) continue;
+          if (!bestUpstream || signal.rank > bestUpstream.rank) {
+            bestUpstream = signal;
+          }
+        }
+      } else if (entry.optionId !== TO_BUILD) {
+        bestUpstream = entry;
+      }
+      target = bestUpstream;
+    }
+
+    if (!target) {
+      // Aucun signal actif permettant de deplacer le ticket rejete
+      continue;
+    }
+
     // Un statut hors echelle et hors attente vaut 0 : le ticket est
     // alors pris en charge comme s'il n'avait pas de statut.
-    const currentRank = RANK_BY_OPTION.get(item.optionId) ?? 0;
     if (currentRank >= target.rank) continue;
 
     const status = STATUS_BY_OPTION.get(target.optionId);
@@ -277,6 +327,9 @@ async function loadProjectItems(github) {
                   ... on Issue {
                     number
                     repository { name }
+                    labels(first: 20) {
+                      nodes { name }
+                    }
                   }
                 }
                 fieldValues(first: 30) {
@@ -308,10 +361,14 @@ async function loadProjectItems(github) {
       const status = item.fieldValues.nodes.find(
         (value) => value.field?.id === STATUS_FIELD_ID,
       );
+      const labels = new Set(
+        (content.labels?.nodes || []).map((node) => node.name),
+      );
       byIssue.set(key(content.repository.name, content.number), {
         id: item.id,
         optionId: status?.optionId ?? null,
         label: status?.name ?? null,
+        labels,
       });
     }
 
@@ -437,6 +494,7 @@ module.exports.createWantedTracker = createWantedTracker;
 module.exports.collectBranchSignals = collectBranchSignals;
 module.exports.collectPullRequestSignals = collectPullRequestSignals;
 module.exports.planMoves = planMoves;
+module.exports.loadProjectItems = loadProjectItems;
 module.exports.constants = {
   LADDER,
   HOLD_OPTION_IDS,
@@ -445,4 +503,5 @@ module.exports.constants = {
   EN_COURS,
   A_FUSIONNER,
   TO_BUILD,
+  REJECTED_LABEL,
 };

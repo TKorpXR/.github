@@ -11,7 +11,7 @@ const {
   projectPage,
 } = require('./helpers/fakes');
 
-const { START_AT, REPOSITORIES, EN_COURS, A_FUSIONNER, TO_BUILD } = sync.constants;
+const { START_AT, REPOSITORIES, EN_COURS, A_FUSIONNER, TO_BUILD, REJECTED_LABEL } = sync.constants;
 const STATUS_FIELD_ID = 'PVTSSF_lADOCnLJI84AkpBozgc0WBA';
 const RECENT = new Date(START_AT + 24 * 60 * 60 * 1000).toISOString();
 const OLD = new Date(START_AT - 24 * 60 * 60 * 1000).toISOString();
@@ -29,10 +29,14 @@ const OPTION = {
   versionUlterieure: '04ee2d3b',
 };
 
-function item(id, repository, number, optionId, label = optionId) {
+function item(id, repository, number, optionId, label = optionId, labels = []) {
   return {
     id,
-    content: { number, repository: { name: repository } },
+    content: {
+      number,
+      repository: { name: repository },
+      labels: { nodes: labels.map((name) => ({ name })) },
+    },
     fieldValues: {
       nodes: optionId ? [{ optionId, name: label, field: { id: STATUS_FIELD_ID } }] : [],
     },
@@ -110,6 +114,100 @@ test('planMoves ne ramene jamais en arriere un ticket deja en recette (#560)', (
   ]);
 
   assert.deepEqual(sync.planMoves(wanted, projectItems).moves, []);
+});
+
+test('planMoves ne ramene pas en To build/To push un ticket rejete en amont avec Toujours pas bon', () => {
+  const { wanted, want } = sync.createWantedTracker();
+  want('pulse-web-interface', 1, TO_BUILD, 'pulse-web-interface#100 fusionnee');
+  want('pulse-web-interface', 2, TO_BUILD, 'pulse-web-interface#101 fusionnee');
+
+  const projectItems = new Map([
+    [
+      'pulse-web-interface#1',
+      {
+        id: 'I1',
+        optionId: OPTION.aFaire,
+        label: 'A faire',
+        labels: new Set([REJECTED_LABEL]),
+      },
+    ],
+    [
+      'pulse-web-interface#2',
+      {
+        id: 'I2',
+        optionId: OPTION.qualifier,
+        label: 'Retour Clo / a classifer',
+        labels: new Set([REJECTED_LABEL, 'backend']),
+      },
+    ],
+  ]);
+
+  const plan = sync.planMoves(wanted, projectItems);
+  assert.deepEqual(plan.moves, []);
+});
+
+test('planMoves fait avancer un ticket Toujours pas bon vers En cours ou A fusionner si une reprise existe', () => {
+  const { wanted, want } = sync.createWantedTracker();
+  // Ticket 1 a une ancienne PR fusionnee ET une nouvelle branche de reprise
+  want('pulse-web-interface', 1, TO_BUILD, 'pulse-web-interface#100 fusionnee');
+  want('pulse-web-interface', 1, EN_COURS, 'branche fix/issue-1-reprise');
+
+  // Ticket 2 a une ancienne PR fusionnee ET une nouvelle PR ouverte
+  want('pulse-web-interface', 2, TO_BUILD, 'pulse-web-interface#101 fusionnee');
+  want('pulse-web-interface', 2, A_FUSIONNER, 'pulse-web-interface#102 ouverte');
+
+  const projectItems = new Map([
+    [
+      'pulse-web-interface#1',
+      {
+        id: 'I1',
+        optionId: OPTION.aFaire,
+        label: 'A faire',
+        labels: new Set([REJECTED_LABEL]),
+      },
+    ],
+    [
+      'pulse-web-interface#2',
+      {
+        id: 'I2',
+        optionId: OPTION.enCours,
+        label: 'En cours',
+        labels: new Set([REJECTED_LABEL]),
+      },
+    ],
+  ]);
+
+  const { moves } = sync.planMoves(wanted, projectItems);
+  assert.deepEqual(
+    moves.map(({ issue, from, to }) => ({ issue, from, to })),
+    [
+      { issue: 'pulse-web-interface#1', from: 'A faire', to: 'En cours' },
+      { issue: 'pulse-web-interface#2', from: 'En cours', to: 'A fusionner' },
+    ],
+  );
+});
+
+test('planMoves avance vers To build/To push si le ticket n a plus le label Toujours pas bon', () => {
+  const { wanted, want } = sync.createWantedTracker();
+  want('pulse-web-interface', 1, TO_BUILD, 'pulse-web-interface#100 fusionnee');
+
+  const projectItems = new Map([
+    [
+      'pulse-web-interface#1',
+      {
+        id: 'I1',
+        optionId: OPTION.aFaire,
+        label: 'A faire',
+        labels: new Set(),
+      },
+    ],
+  ]);
+
+  const { moves } = sync.planMoves(wanted, projectItems);
+  assert.deepEqual(
+    moves.map(({ issue, from, to }) => ({ issue, from, to })),
+    [{ issue: 'pulse-web-interface#1', from: 'A faire', to: 'To build/To push' }],
+  );
 });
 
 test('planMoves respecte les mises en attente et compte les absents', () => {
@@ -226,6 +324,30 @@ test('run en execute ecrit le statut vise', async () => {
   const github = fakeGithub({
     merged: [pr(20, { mergedAt: RECENT, headRefName: 'fix/issue-8-x' })],
     items: [item('I8', 'pulse-web-interface', 8, OPTION.enCours, 'En cours')],
+    onMutation: (variables) => mutations.push(variables),
+  });
+  const core = createCore();
+
+  await sync({ github, core, env: { SYNC_MODE: 'execute' } });
+
+  assert.deepEqual(
+    mutations.map(({ itemId, optionId }) => ({ itemId, optionId })),
+    [{ itemId: 'I8', optionId: TO_BUILD }],
+  );
+  assert.equal(core.calls.failed.length, 0);
+});
+
+test('run en execute ignore les tickets rejetes Toujours pas bon sans reprise', async () => {
+  const mutations = [];
+  const github = fakeGithub({
+    merged: [
+      pr(20, { mergedAt: RECENT, headRefName: 'fix/issue-8-x' }),
+      pr(21, { mergedAt: RECENT, headRefName: 'fix/issue-9-x' }),
+    ],
+    items: [
+      item('I8', 'pulse-web-interface', 8, OPTION.enCours, 'En cours'),
+      item('I9', 'pulse-web-interface', 9, OPTION.aFaire, 'A faire', [REJECTED_LABEL]),
+    ],
     onMutation: (variables) => mutations.push(variables),
   });
   const core = createCore();
@@ -371,4 +493,26 @@ test('une vraie panne sur un depot reste un echec, les autres depots sont balaye
     github.calls.graphql.filter(({ query }) => query.includes('refs(')).length,
     REPOSITORIES.length,
   );
+});
+
+test('loadProjectItems charge les labels sous forme de Set', async () => {
+  const github = fakeGithub({
+    items: [
+      item('I1', 'pulse-web-interface', 1, OPTION.aFaire, 'A faire', [
+        REJECTED_LABEL,
+        'documentation',
+      ]),
+      item('I2', 'pulse-web-interface', 2, OPTION.enCours, 'En cours', []),
+    ],
+  });
+
+  const byIssue = await sync.loadProjectItems(github);
+  assert.equal(byIssue.size, 2);
+  const item1 = byIssue.get('pulse-web-interface#1');
+  assert.ok(item1.labels.has(REJECTED_LABEL));
+  assert.ok(item1.labels.has('documentation'));
+  assert.equal(item1.labels.has('autre'), false);
+
+  const item2 = byIssue.get('pulse-web-interface#2');
+  assert.equal(item2.labels.size, 0);
 });
