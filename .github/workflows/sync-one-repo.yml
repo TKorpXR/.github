@@ -4,17 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: "Dépôt cible"
+        description: "Nom du dépôt cible"
         required: true
-        type: choice
-        options:
-          # BEGIN_REPO_OPTIONS (auto-updated)
-          - pulse-web-interface
-          - pulse-app-pilotage
-          - pulse-mdm-android-service
-          - Graffwall_V3
-          - pulse-mdm-server
-          # END_REPO_OPTIONS
+        type: string
       delete-extraneous:
         description: "Supprimer les labels non listés dans labels.yml ?"
         required: false
@@ -45,7 +37,7 @@ jobs:
 
       - name: Run per-repo sync
         env:
-          GH_TOKEN: ${{ secrets.ORG_LABELS_TOKEN }} # PAT org: Issues RW + Metadata Read
+          GH_TOKEN: ${{ secrets.PROJECT_ROUTER_TOKEN_V2 || secrets.PROJECT_ROUTER_TOKEN }}
           ORG: ${{ github.repository_owner }}
           REPO: ${{ github.event.inputs.repo }}
           DELETE_EXTRA: ${{ github.event.inputs.delete-extraneous }}
@@ -60,7 +52,7 @@ jobs:
           const repo = process.env.REPO;
           const deleteExtra = (process.env.DELETE_EXTRA || 'false') === 'true';
 
-          if (!token) { console.error('Missing ORG_LABELS_TOKEN.'); process.exit(1); }
+          if (!token) { console.error('Missing PROJECT_ROUTER_TOKEN_V2 / PROJECT_ROUTER_TOKEN.'); process.exit(1); }
           if (!org || !repo) { console.error('Missing ORG or REPO.'); process.exit(1); }
 
           const env = { ...process.env, GH_TOKEN: token };
